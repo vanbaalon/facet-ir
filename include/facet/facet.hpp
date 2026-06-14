@@ -33,6 +33,19 @@ struct Diagnostic {
   std::string message;
 };
 
+struct Unmapped {
+  std::string head;
+  std::string kernel;
+  std::string path;
+};
+
+struct Coverage {
+  std::string kernel;
+  int supported = 0;
+  int total = 0;
+  std::vector<Unmapped> missing;
+};
+
 class Arena {
 public:
   Ref sym(std::string name);
@@ -72,6 +85,7 @@ std::string print_latex(Ref ref);
 std::string print_sympy(Ref ref);
 std::string print_sympy_srepr(Ref ref);
 Ref evaluate_sympy(Arena& arena, Ref ref);
+Coverage coverage(Ref ref, const std::string& kernel);
 
 std::vector<Diagnostic> validate(Ref ref);
 std::string render_svg(Ref ref);

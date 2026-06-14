@@ -219,13 +219,80 @@ std::string sympy_wrap(std::string out, int prec, int parent_prec) {
   return out;
 }
 
-std::string sympy_function_name(const std::string& head) {
-  static const std::unordered_map<std::string, std::string> names = {
-      {"sin", "sin"},   {"cos", "cos"},       {"tan", "tan"},
-      {"log", "log"},   {"sqrt", "sqrt"},      {"simplify", "simplify"},
-      {"expand", "expand"}};
-  auto it = names.find(head);
-  return it != names.end() ? it->second : "";
+enum class MapKind { Infix, Function, Relation };
+
+struct KernelMapEntry {
+  const char* head;
+  MapKind kind;
+  const char* target;
+  int prec = 0;
+};
+
+struct KernelManifest {
+  const char* name;
+  const char* transport;
+  const char* default_role;
+  std::vector<KernelMapEntry> map;
+};
+
+const KernelManifest& sympy_manifest() {
+  static const KernelManifest manifest = {
+      "sympy",
+      "subprocess:python3",
+      "transformer",
+      {
+          {"+", MapKind::Infix, "+", 50},
+          {"-", MapKind::Infix, "-", 50},
+          {"*", MapKind::Infix, "*", 60},
+          {"/", MapKind::Infix, "/", 60},
+          {"^", MapKind::Infix, "**", 70},
+          {"sin", MapKind::Function, "sin"},
+          {"cos", MapKind::Function, "cos"},
+          {"tan", MapKind::Function, "tan"},
+          {"log", MapKind::Function, "log"},
+          {"sqrt", MapKind::Function, "sqrt"},
+          {"simplify", MapKind::Function, "simplify"},
+          {"expand", MapKind::Function, "expand"},
+          {"=", MapKind::Relation, "Eq"},
+          {"!=", MapKind::Relation, "Ne"},
+          {">", MapKind::Relation, "Gt"},
+          {">=", MapKind::Relation, "Ge"},
+          {"<", MapKind::Relation, "Lt"},
+          {"<=", MapKind::Relation, "Le"},
+          {"int", MapKind::Function, "Integral"},
+          {"sum", MapKind::Function, "Sum"},
+          {"prod", MapKind::Function, "Product"},
+          {"lim", MapKind::Function, "Limit"},
+          {"diff", MapKind::Function, "diff"},
+          {"lam", MapKind::Function, "Lambda"},
+      }};
+  return manifest;
+}
+
+const KernelManifest& stub_manifest() {
+  static const KernelManifest manifest = {
+      "stub", "none", "transformer", {}};
+  return manifest;
+}
+
+const KernelManifest& kernel_manifest(const std::string& kernel) {
+  if (kernel == "sympy") {
+    return sympy_manifest();
+  }
+  if (kernel == "stub") {
+    return stub_manifest();
+  }
+  throw Error("unknown kernel: " + kernel);
+}
+
+const KernelMapEntry* lookup_kernel_entry(const KernelManifest& manifest,
+                                          const std::string& head) {
+  for (const auto& entry : manifest.map) {
+    if (head == entry.head) {
+      return &entry;
+    }
+  }
+  return nullptr;
 }
 
 std::string shell_quote(const std::string& text) {
@@ -309,38 +376,23 @@ std::string print_sympy_prec(Ref ref, int parent_prec) {
     return sympy_wrap("-" + print_sympy_prec(ref->args[0], 80), 80,
                       parent_prec);
   }
-  if (ref->text == "^" && ref->args.size() == 2) {
-    int prec = 70;
-    std::string out = print_sympy_prec(ref->args[0], prec + 1) + "**" +
-                      print_sympy_prec(ref->args[1], prec);
-    return sympy_wrap(out, prec, parent_prec);
-  }
-  if (ref->text == "/" && ref->args.size() == 2) {
-    int prec = 60;
-    std::string out = print_sympy_prec(ref->args[0], prec) + "/" +
-                      print_sympy_prec(ref->args[1], prec + 1);
-    return sympy_wrap(out, prec, parent_prec);
-  }
-  if ((ref->text == "+" || ref->text == "-" || ref->text == "*") &&
+  const KernelMapEntry* table_entry =
+      lookup_kernel_entry(sympy_manifest(), ref->text);
+  if (table_entry && table_entry->kind == MapKind::Infix &&
       ref->args.size() == 2) {
-    int prec = ref->text == "+" || ref->text == "-" ? 50 : 60;
-    std::string op = ref->text == "*" ? "*" : ref->text;
-    std::string out = print_sympy_prec(ref->args[0], prec) + op +
-                      print_sympy_prec(ref->args[1], prec + 1);
+    int prec = table_entry->prec;
+    int rhs_prec = ref->text == "^" ? prec : prec + 1;
+    int lhs_prec = ref->text == "^" ? prec + 1 : prec;
+    std::string out = print_sympy_prec(ref->args[0], lhs_prec) +
+                      table_entry->target +
+                      print_sympy_prec(ref->args[1], rhs_prec);
     return sympy_wrap(out, prec, parent_prec);
   }
-  if ((ref->text == "=" || ref->text == "!=" || ref->text == ">" ||
-       ref->text == ">=" || ref->text == "<" || ref->text == "<=") &&
+  if (table_entry && table_entry->kind == MapKind::Relation &&
       ref->args.size() == 2) {
-    static const std::vector<std::pair<std::string, std::string>> rels = {
-        {"=", "Eq"},  {"!=", "Ne"}, {">", "Gt"},
-        {">=", "Ge"}, {"<", "Lt"},  {"<=", "Le"}};
-    for (const auto& rel : rels) {
-      if (ref->text == rel.first) {
-        return rel.second + "(" + print_sympy_prec(ref->args[0], 0) + ", " +
-               print_sympy_prec(ref->args[1], 0) + ")";
-      }
-    }
+    return std::string(table_entry->target) + "(" +
+           print_sympy_prec(ref->args[0], 0) + ", " +
+           print_sympy_prec(ref->args[1], 0) + ")";
   }
   if (ref->text == "int" && ref->args.size() == 2 &&
       ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder" &&
@@ -406,8 +458,10 @@ std::string print_sympy_prec(Ref ref, int parent_prec) {
     return "Lambda(" + print_sympy_prec(ref->args[0]->args[0], 0) + ", " +
            print_sympy_prec(ref->args[1], 0) + ")";
   }
-  if (std::string fn = sympy_function_name(ref->text); !fn.empty()) {
-    return sympy_call(fn, ref);
+  if (table_entry && table_entry->kind == MapKind::Function &&
+      ref->text != "int" && ref->text != "sum" && ref->text != "prod" &&
+      ref->text != "lim" && ref->text != "diff" && ref->text != "lam") {
+    return sympy_call(table_entry->target, ref);
   }
   throw Error("SymPy emit does not support head: " + ref->text);
 }
@@ -646,6 +700,41 @@ std::string build_eval_code(const std::string& source, const AssumeMap& assumpti
     "print(s.srepr(expr))\n";
 }
 
+bool coverage_supports_head(const KernelManifest& manifest,
+                            const std::string& head) {
+  if (lookup_kernel_entry(manifest, head)) {
+    return true;
+  }
+  if (std::string(manifest.name) == "sympy") {
+    return head == "neg" || head == "binder" || head == "range" ||
+           head == "approach";
+  }
+  return false;
+}
+
+void coverage_walk(Ref ref, const KernelManifest& manifest,
+                   const std::string& path, Coverage& out) {
+  if (!ref || ref->tag != Tag::Compound) {
+    return;
+  }
+  ++out.total;
+  if (!ref->attrs.empty()) {
+    out.missing.push_back({ref->text + ":attrs", manifest.name, path});
+  } else if (coverage_supports_head(manifest, ref->text)) {
+    ++out.supported;
+  } else {
+    out.missing.push_back({ref->text, manifest.name, path});
+  }
+  for (std::size_t i = 0; i < ref->args.size(); ++i) {
+    coverage_walk(ref->args[i], manifest,
+                  path + ".args[" + std::to_string(i) + "]", out);
+  }
+  for (const auto& attr : ref->attrs) {
+    coverage_walk(attr.value, manifest, path + ".attrs[" + attr.key + "]",
+                  out);
+  }
+}
+
 } // namespace
 
 Ref read_sympy_srepr(Arena& arena, const std::string& input) {
@@ -675,6 +764,14 @@ Ref evaluate_sympy(Arena& arena, Ref ref) {
 
 std::string print_sympy(Ref ref) {
   return print_sympy_prec(ref, 0);
+}
+
+Coverage coverage(Ref ref, const std::string& kernel) {
+  const KernelManifest& manifest = kernel_manifest(kernel);
+  Coverage out;
+  out.kernel = manifest.name;
+  coverage_walk(ref, manifest, "root", out);
+  return out;
 }
 
 } // namespace facet

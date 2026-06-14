@@ -141,6 +141,8 @@ Implementation note: the CLI smoke suite should cover the compatibility aliases 
 3. Change source emission to return or throw structured `Unmapped` data with head, kernel, and tree path.
 4. Gate: one expression with three unsupported heads reports all three in coverage and the first precise path in emission.
 
+Implementation note: the initial kernel skeleton uses an internal manifest for SymPy plus a no-op `stub` kernel, table-driven emission for arithmetic/functions/relations, and public `Coverage`/`Unmapped` structs. Full result-family replacement for source emission can follow after coverage proves the mapping table boundaries.
+
 **Step 12 — `compare` last.**
 1. Implement `by=structural` first using `same_tree`.
 2. Implement `by=simplify` by routing both sides through the existing SymPy evaluation path, clearly labelled as transformer-level.

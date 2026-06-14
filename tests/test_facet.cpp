@@ -498,6 +498,56 @@ void sympy_examples() {
            "(>= x 0)", "sympy srepr reads relation");
 }
 
+void kernel_mapping_and_coverage() {
+  Arena arena;
+
+  check_eq(print_sympy(read_surface(arena, "(x + 1) * sin(x)")),
+           "(x+1)*sin(x)", "sympy arithmetic/functions use mapping table");
+  check_eq(print_sympy(read_surface(arena, "x <= 1")),
+           "Le(x, 1)", "sympy relations use mapping table");
+
+  Ref supported = read_surface(arena, "sin(x) + cos(x)");
+  Coverage ok = coverage(supported, "sympy");
+  check_eq(ok.kernel, "sympy", "coverage records kernel name");
+  check_eq(std::to_string(ok.total), "3", "coverage counts compound heads");
+  check_eq(std::to_string(ok.supported), "3",
+           "coverage counts supported compound heads");
+  check(ok.missing.empty(), "coverage has no missing heads for supported expr");
+
+  Ref mixed = read_surface(arena, "qsc_glue(x) + foo(y)");
+  Coverage gaps = coverage(mixed, "sympy");
+  check_eq(std::to_string(gaps.total), "3",
+           "coverage counts unsupported compound heads");
+  check_eq(std::to_string(gaps.supported), "1",
+           "coverage counts supported heads amid gaps");
+  check_eq(std::to_string(gaps.missing.size()), "2",
+           "coverage reports all missing heads");
+  if (gaps.missing.size() == 2) {
+    check_eq(gaps.missing[0].head, "qsc_glue",
+             "coverage reports first missing head");
+    check_eq(gaps.missing[0].path, "root.args[0]",
+             "coverage reports first missing path");
+    check_eq(gaps.missing[1].head, "foo",
+             "coverage reports second missing head");
+    check_eq(gaps.missing[1].path, "root.args[1]",
+             "coverage reports second missing path");
+  }
+
+  Coverage stub = coverage(supported, "stub");
+  check_eq(stub.kernel, "stub", "coverage supports second stub kernel");
+  check_eq(std::to_string(stub.supported), "0",
+           "stub kernel has no mapped heads");
+  check_eq(std::to_string(stub.missing.size()), "3",
+           "stub kernel reports all compound heads missing");
+
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)coverage(read_surface(a, "x + 1"), "missing_kernel");
+      },
+      "unknown kernel", "coverage rejects unknown kernel");
+}
+
 void audit_regressions() {
   Arena arena;
   Ref left_power = read_core(arena, "(^ (^ a b) c)");
@@ -994,6 +1044,7 @@ int main() {
   surface_examples();
   latex_examples();
   sympy_examples();
+  kernel_mapping_and_coverage();
   audit_regressions();
   object_round_trips();
   cross_mode_agreement();
