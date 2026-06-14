@@ -584,6 +584,100 @@ private:
   }
 };
 
+class StatementParser {
+public:
+  StatementParser(Arena& arena, std::string input)
+      : arena_(arena), toks_(internal::lex_layout_for_test(input)) {}
+
+  Ref parse() {
+    expect("do");
+    expect(":");
+    expect("NEWLINE");
+    expect("INDENT");
+    std::vector<Ref> stmts;
+    while (!at("DEDENT")) {
+      stmts.push_back(statement());
+    }
+    expect("DEDENT");
+    if (pos_ != toks_.size()) {
+      throw Error("trailing input after do block at " + location());
+    }
+    return arena_.compound("do", stmts);
+  }
+
+private:
+  Arena& arena_;
+  std::vector<internal::LayoutTok> toks_;
+  std::size_t pos_ = 0;
+
+  bool at(const std::string& text) const {
+    return pos_ < toks_.size() && toks_[pos_].text == text;
+  }
+
+  std::string location() const {
+    if (pos_ >= toks_.size()) {
+      return "end of input";
+    }
+    return "line " + std::to_string(toks_[pos_].line) + ", column " +
+           std::to_string(toks_[pos_].column);
+  }
+
+  std::string expect() {
+    if (pos_ >= toks_.size()) {
+      throw Error("unexpected end of do block");
+    }
+    return toks_[pos_++].text;
+  }
+
+  void expect(const std::string& text) {
+    if (!at(text)) {
+      throw Error("expected '" + text + "' in do block at " + location());
+    }
+    ++pos_;
+  }
+
+  Ref statement() {
+    if (at("let") || at("mut")) {
+      std::string head = expect();
+      std::string name = expect();
+      expect("=");
+      Ref value = expression_until_newline();
+      expect("NEWLINE");
+      return arena_.compound(head, {surface_atom_from_token(arena_, name), value});
+    }
+    if (at("return")) {
+      expect("return");
+      Ref value = expression_until_newline();
+      expect("NEWLINE");
+      return arena_.compound("return", {value});
+    }
+
+    std::string name = expect();
+    if (at("=")) {
+      throw Error("use '<-' for assignment; '=' is equality at " + location());
+    }
+    expect("<-");
+    Ref value = expression_until_newline();
+    expect("NEWLINE");
+    return arena_.compound("assign", {surface_atom_from_token(arena_, name), value});
+  }
+
+  Ref expression_until_newline() {
+    std::vector<std::string> parts;
+    while (pos_ < toks_.size() && !at("NEWLINE")) {
+      if (at("INDENT") || at("DEDENT")) {
+        throw Error("expected expression before " + toks_[pos_].text +
+                    " at " + location());
+      }
+      parts.push_back(expect());
+    }
+    if (parts.empty()) {
+      throw Error("expected expression at " + location());
+    }
+    return SurfaceParser(arena_, join(parts, " ")).parse();
+  }
+};
+
 std::string print_surface_prec(Ref ref, int parent_prec);
 
 std::string print_core_inner(Ref ref) {
@@ -1437,6 +1531,24 @@ std::string object_inner(Ref ref) {
   return out;
 }
 
+bool starts_with_do_block(const std::string& input) {
+  std::size_t pos = 0;
+  while (pos < input.size() &&
+         std::isspace(static_cast<unsigned char>(input[pos]))) {
+    ++pos;
+  }
+  if (input.compare(pos, 2, "do") != 0) {
+    return false;
+  }
+  pos += 2;
+  while (pos < input.size() &&
+         std::isspace(static_cast<unsigned char>(input[pos])) &&
+         input[pos] != '\n') {
+    ++pos;
+  }
+  return pos < input.size() && input[pos] == ':';
+}
+
 } // namespace
 
 Ref read_core(Arena& arena, const std::string& input) {
@@ -1452,6 +1564,9 @@ Ref read_strict(Arena& arena, const std::string& input) {
 std::string print_strict(Ref ref) { return print_strict_inner(ref); }
 
 Ref read_surface(Arena& arena, const std::string& input) {
+  if (starts_with_do_block(input)) {
+    return StatementParser(arena, input).parse();
+  }
   return SurfaceParser(arena, input).parse();
 }
 

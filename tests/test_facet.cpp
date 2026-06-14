@@ -727,6 +727,51 @@ void layout_lexer_tests() {
       "tabs are not allowed", "layout lexer rejects tabs in indentation");
 }
 
+void minimal_do_blocks() {
+  Arena arena;
+  Ref block = read_surface(
+      arena,
+      "do:\n"
+      "    let y = x + 1\n"
+      "    mut acc = 0\n"
+      "    acc <- acc + y\n"
+      "    return acc\n");
+  check_eq(print_core(block),
+           "(do (let y (+ x 1)) (mut acc 0) (assign acc (+ acc y)) "
+           "(return acc))",
+           "surface do block lowers minimal statements");
+  check(same_tree(block, read_core(arena, print_core(block))),
+        "minimal do block core round-trip");
+  check_eq(print_strict(block),
+           "do(let(y, +(x, 1)), mut(acc, 0), assign(acc, +(acc, y)), "
+           "return(acc))",
+           "minimal do block prints strict generic calls");
+
+  Ref with_call = read_surface(
+      arena,
+      "do:\n"
+      "    return f(\n"
+      "        x,\n"
+      "        y\n"
+      "    )\n");
+  check_eq(print_core(with_call), "(do (return (f x y)))",
+           "surface do block parses continuation expression");
+
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_surface(a, "do:\n    acc = acc + 1\n");
+      },
+      "use '<-' for assignment", "do block rejects statement equals");
+
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_strict(a, "do:\n    return x\n");
+      },
+      "trailing input", "strict rejects layout do block");
+}
+
 void new_feature_regressions() {
   Arena arena;
 
@@ -808,6 +853,7 @@ int main() {
   diagnostics_include_locations();
   validator_warnings();
   layout_lexer_tests();
+  minimal_do_blocks();
   new_feature_regressions();
 
   if (failures) {

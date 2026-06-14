@@ -131,7 +131,7 @@ void Lexer::next() {
 
   static const std::vector<std::string> ops = {
       "===", "...?", "...", ":=", "~>", "~=", "=>", "|->",
-      "|>",   "->",  "..",  ">=", "<=", "!=", ".("};
+      "|>",   "->",  "<-",  "..",  ">=", "<=", "!=", ".("};
   for (const auto& op : ops) {
     if (input_.compare(pos_, op.size(), op) == 0) {
       for (std::size_t i = 0; i < op.size(); ++i) {
