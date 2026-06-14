@@ -610,6 +610,45 @@ void diagnostics_include_locations() {
         (void)read_strict(a, "sin(\nx");
       },
       "line 2, column 2", "strict parser reports line/column");
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_surface(a, "dict{ \"f\" : f : R -> R }");
+      },
+      "nested dict ascription must be parenthesized",
+      "dict nested ascription diagnostic is targeted");
+}
+
+void validator_warnings() {
+  Arena arena;
+
+  Ref function_access = read_surface(arena, "sin[x]");
+  std::vector<Diagnostic> function_warnings = validate(function_access);
+  check_eq(std::to_string(function_warnings.size()), "1",
+           "validator warns on known function access count");
+  if (!function_warnings.empty()) {
+    check_eq(function_warnings[0].code, "IndexingKnownFunction",
+             "validator warns on known function access code");
+    check(function_warnings[0].message.find("sin(...)") != std::string::npos,
+          "validator known function warning suggests parentheses");
+  }
+
+  Ref real_access = read_surface(arena, "v[i]");
+  check(validate(real_access).empty(),
+        "validator is silent for ordinary index access");
+
+  Ref bracket_end = read_surface(arena, "v[1..end]");
+  check(validate(bracket_end).empty(),
+        "validator is silent for bracket-local end");
+
+  Ref free_end = read_surface(arena, "n := end");
+  std::vector<Diagnostic> end_warnings = validate(free_end);
+  check_eq(std::to_string(end_warnings.size()), "1",
+           "validator warns on free end count");
+  if (!end_warnings.empty()) {
+    check_eq(end_warnings[0].code, "EndOutsideIndex",
+             "validator warns on free end code");
+  }
 }
 
 void new_feature_regressions() {
@@ -680,6 +719,7 @@ int main() {
   cross_mode_agreement();
   adversarial_grammar();
   diagnostics_include_locations();
+  validator_warnings();
   new_feature_regressions();
 
   if (failures) {

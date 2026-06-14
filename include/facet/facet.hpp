@@ -28,6 +28,11 @@ struct Node {
   std::uint64_t hash{};
 };
 
+struct Diagnostic {
+  std::string code;
+  std::string message;
+};
+
 class Arena {
 public:
   Ref sym(std::string name);
@@ -66,6 +71,7 @@ Ref read_sympy_srepr(Arena& arena, const std::string& input);
 std::string print_latex(Ref ref);
 std::string print_sympy(Ref ref);
 
+std::vector<Diagnostic> validate(Ref ref);
 bool same_tree(Ref lhs, Ref rhs);
 
 } // namespace facet

@@ -15,6 +15,7 @@ using internal::attr_value;
 using internal::atom_from_token;
 using internal::escape;
 using internal::is_binder_head;
+using internal::is_known_nonindexed_function;
 using internal::join;
 using internal::lookup_op;
 using internal::prec_of;
@@ -351,6 +352,11 @@ private:
         Ref key = expr(0);
         lex_.expect(":");
         Ref value = expr(0);
+        if (lex_.at(":")) {
+          throw Error("nested dict ascription must be parenthesized at line " +
+                      std::to_string(lex_.peek().line) + ", column " +
+                      std::to_string(lex_.peek().column));
+        }
         pairs.push_back(arena_.compound("pair", {key, value}));
       } while (lex_.take(","));
       lex_.expect("}");
@@ -1061,6 +1067,35 @@ std::string print_latex_inner(Ref ref) {
   return print_latex_prec(ref, 0);
 }
 
+void validate_walk(Ref ref, std::vector<Diagnostic>& out) {
+  if (!ref) {
+    return;
+  }
+  if (ref->tag == Tag::Sym && ref->text == "end") {
+    out.push_back({"EndOutsideIndex",
+                   "`end` is only bracket-local inside access or slice; use "
+                   "end(v, axis) outside indexing"});
+    return;
+  }
+  if (ref->tag != Tag::Compound) {
+    return;
+  }
+  if (ref->text == "at" && ref->args.size() >= 2 &&
+      ref->args[0]->tag == Tag::Sym &&
+      is_known_nonindexed_function(ref->args[0]->text)) {
+    out.push_back(
+        {"IndexingKnownFunction",
+         "parsed as concrete access at(" + ref->args[0]->text +
+             ", ...); did you mean " + ref->args[0]->text + "(...)?"});
+  }
+  for (Ref arg : ref->args) {
+    validate_walk(arg, out);
+  }
+  for (const auto& attr : ref->attrs) {
+    validate_walk(attr.value, out);
+  }
+}
+
 class JsonParser {
 public:
   JsonParser(Arena& arena, std::string input)
@@ -1390,5 +1425,11 @@ Ref read_object(Arena& arena, const std::string& input) {
 std::string print_object(Ref ref) { return object_inner(ref); }
 
 std::string print_latex(Ref ref) { return print_latex_inner(ref); }
+
+std::vector<Diagnostic> validate(Ref ref) {
+  std::vector<Diagnostic> out;
+  validate_walk(ref, out);
+  return out;
+}
 
 } // namespace facet

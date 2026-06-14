@@ -57,6 +57,13 @@ int main(int argc, char** argv) {
       return 2;
     }
 
+    if (read == "surface") {
+      for (const auto& diagnostic : facet::validate(expr)) {
+        std::cerr << "facet warning [" << diagnostic.code
+                  << "]: " << diagnostic.message << "\n";
+      }
+    }
+
     if (emit == "surface") {
       std::cout << facet::print_surface(expr) << "\n";
     } else if (emit == "strict") {
