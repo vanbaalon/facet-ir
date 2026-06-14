@@ -135,7 +135,9 @@ private:
       ++pos_;
       return input_.substr(start, pos_ - start);
     }
-    if (std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
+    if (std::isdigit(static_cast<unsigned char>(input_[pos_])) ||
+        (input_[pos_] == '-' && pos_ + 1 < input_.size() &&
+         std::isdigit(static_cast<unsigned char>(input_[pos_ + 1])))) {
       std::size_t start = pos_++;
       while (pos_ < input_.size() &&
              std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
@@ -224,6 +226,12 @@ public:
       : arena_(arena), lex_(std::move(input)) {}
 
   Ref parse() {
+    if (lex_.at("rule")) {
+      return rule_decl();
+    }
+    if (lex_.at("goal")) {
+      return labelled_decl("goal");
+    }
     Ref ref = expr(0);
     if (!lex_.peek().eof) {
       throw Error("trailing input after surface expression near line " +
@@ -263,6 +271,14 @@ private:
   }
 
   Ref primary() {
+    if (lex_.take("-")) {
+      Ref value = primary();
+      if (value->tag == Tag::Int || value->tag == Tag::Real) {
+        return value->tag == Tag::Int ? arena_.integer("-" + value->text)
+                                      : arena_.real("-" + value->text);
+      }
+      return arena_.compound("neg", {value});
+    }
     if (lex_.take("(")) {
       Ref inner = expr(0);
       lex_.expect(")");
@@ -311,7 +327,7 @@ private:
       lex_.expect(")");
       Ref binder = arena_.compound(
           "binder",
-          {arena_.sym(name),
+          {surface_atom_from_token(arena_, name),
            sep == "->" ? arena_.compound("approach", {domain}) : domain});
       return arena_.compound(t, {binder, body});
     }
@@ -342,7 +358,8 @@ private:
     std::string name = lex_.expect();
     lex_.expect(":");
     Ref domain = expr(0);
-    return arena_.compound("binder", {arena_.sym(name), domain});
+    return arena_.compound("binder",
+                           {surface_atom_from_token(arena_, name), domain});
   }
 
   std::vector<Ref> args_until(const std::string& close) {
@@ -374,6 +391,54 @@ private:
       return arena_.compound(target->text, target->args, attrs);
     }
     return arena_.compound("@", {target, context});
+  }
+
+  Ref rule_decl() {
+    lex_.expect("rule");
+    std::string name = lex_.expect();
+    lex_.expect(":");
+    Ref body = expr(0);
+    std::vector<Attr> attrs;
+    if (lex_.take("when")) {
+      attrs.push_back({"when", expr(0)});
+    }
+    std::vector<Ref> metas;
+    collect_meta(body, metas);
+    for (const auto& attr : attrs) {
+      collect_meta(attr.value, metas);
+    }
+    std::vector<Ref> forall_args = metas;
+    forall_args.push_back(body);
+    return arena_.compound("rule",
+                           {arena_.sym(name),
+                            arena_.compound("forall", forall_args, attrs)});
+  }
+
+  Ref labelled_decl(const std::string& head) {
+    lex_.expect(head);
+    std::string name = lex_.expect();
+    lex_.expect(":");
+    return arena_.compound(head, {arena_.sym(name), expr(0)});
+  }
+
+  void collect_meta(Ref ref, std::vector<Ref>& out) {
+    if (!ref) {
+      return;
+    }
+    if (ref->tag == Tag::Compound && ref->text == "meta") {
+      for (Ref seen : out) {
+        if (same_tree(seen, ref)) {
+          return;
+        }
+      }
+      out.push_back(ref);
+    }
+    for (Ref arg : ref->args) {
+      collect_meta(arg, out);
+    }
+    for (const auto& attr : ref->attrs) {
+      collect_meta(attr.value, out);
+    }
   }
 };
 
@@ -445,6 +510,30 @@ std::string binder_surface(Ref binder) {
 std::string print_surface_prec(Ref ref, int parent_prec) {
   if (ref->tag != Tag::Compound) {
     return print_atom(ref);
+  }
+  if (ref->text == "rule" && ref->args.size() == 2 &&
+      ref->args[0]->tag == Tag::Sym && ref->args[1]->tag == Tag::Compound &&
+      ref->args[1]->text == "forall" && !ref->args[1]->args.empty()) {
+    Ref forall = ref->args[1];
+    Ref body = forall->args.back();
+    std::string out = "rule " + ref->args[0]->text + ": " +
+                      print_surface_prec(body, 0);
+    if (Ref when = attr_value(forall, "when")) {
+      out += " when " + print_surface_prec(when, 0);
+    }
+    return out;
+  }
+  if (ref->text == "goal" && ref->args.size() == 2 &&
+      ref->args[0]->tag == Tag::Sym) {
+    return "goal " + ref->args[0]->text + ": " +
+           print_surface_prec(ref->args[1], 0);
+  }
+  if (ref->text == "neg" && ref->args.size() == 1) {
+    std::string out = "-" + print_surface_prec(ref->args[0], 80);
+    if (80 < parent_prec) {
+      return "(" + out + ")";
+    }
+    return out;
   }
   if (ref->text == "lam" && ref->args.size() == 2 &&
       ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder") {

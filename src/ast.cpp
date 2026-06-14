@@ -45,8 +45,9 @@ std::string key_of(const Node& node) {
 }
 
 bool decimal_digits(const std::string& s) {
-  return !s.empty() &&
-         std::all_of(s.begin(), s.end(),
+  std::size_t start = (!s.empty() && s.front() == '-') ? 1 : 0;
+  return start < s.size() &&
+         std::all_of(s.begin() + static_cast<std::ptrdiff_t>(start), s.end(),
                      [](unsigned char c) { return std::isdigit(c); });
 }
 
@@ -201,15 +202,17 @@ std::string escape(const std::string& s) {
 }
 
 bool is_int_token(const std::string& s) {
-  return !s.empty() &&
-         std::all_of(s.begin(), s.end(),
+  std::size_t start = (!s.empty() && s.front() == '-') ? 1 : 0;
+  return start < s.size() &&
+         std::all_of(s.begin() + static_cast<std::ptrdiff_t>(start), s.end(),
                      [](unsigned char c) { return std::isdigit(c); });
 }
 
 bool is_real_token(const std::string& s) {
   bool seen_dot = false;
   bool seen_digit = false;
-  for (char c : s) {
+  for (std::size_t i = (!s.empty() && s.front() == '-') ? 1 : 0; i < s.size(); ++i) {
+    char c = s[i];
     if (std::isdigit(static_cast<unsigned char>(c))) {
       seen_digit = true;
     } else if (c == '.' && !seen_dot) {

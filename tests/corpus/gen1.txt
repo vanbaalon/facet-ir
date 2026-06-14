@@ -1,0 +1,35 @@
+case: integral
+surface: int[x : 0..1](sin(pi*x))
+strict: int(binder(x, range(0, 1)), sin(*(pi, x)))
+core: (int (binder x (range 0 1)) (sin (* pi x)))
+latex: \int_{0}^{1} \sin(\pi x)\,dx
+---
+case: lambda_definition
+surface: f := x |-> x^2
+strict: :=(f, lam(binder(x, _), ^(x, 2)))
+core: (:= f (lam (binder x _) (^ x 2)))
+---
+case: unary_minus
+surface: -x + -1
+strict: +(neg(x), -1)
+core: (+ (neg x) -1)
+---
+case: chained_contexts
+surface: simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)
+strict: simplify(sqrt(^(x, 2)), assume=>=(x, 0), via=sympy)
+core: (simplify (sqrt (^ x 2)) :assume (>= x 0) :via sympy)
+---
+case: forall
+surface: forall[x : R](x^2 >= 0)
+strict: forall(binder(x, R), >=(^(x, 2), 0))
+core: (forall (binder x R) (>= (^ x 2) 0))
+---
+case: existential_goal
+surface: goal g: exists[?F : Smooth](int[x : 0..1](?F) = pi / 4)
+strict: goal(g, exists(binder(meta(F, kind=one), Smooth), =(int(binder(x, range(0, 1)), meta(F, kind=one)), /(pi, 4))))
+core: (goal g (exists (binder (meta F :kind one) Smooth) (= (int (binder x (range 0 1)) (meta F :kind one)) (/ pi 4))))
+---
+case: rewrite_rule
+surface: rule pyth: sin(?a)^2 + cos(?a)^2 ~> 1 when ?a > 0
+strict: rule(pyth, forall(meta(a, kind=one), ~>(+(^(sin(meta(a, kind=one)), 2), ^(cos(meta(a, kind=one)), 2)), 1), when=>(meta(a, kind=one), 0)))
+core: (rule pyth (forall (meta a :kind one) (~> (+ (^ (sin (meta a :kind one)) 2) (^ (cos (meta a :kind one)) 2)) 1) :when (> (meta a :kind one) 0)))

@@ -1,6 +1,8 @@
 #include "facet/facet.hpp"
 
+#include <fstream>
 #include <iostream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -9,6 +11,11 @@ using namespace facet;
 namespace {
 
 int failures = 0;
+
+struct CorpusCase {
+  std::string name;
+  std::map<std::string, std::string> fields;
+};
 
 void check(bool condition, const std::string& name) {
   if (!condition) {
@@ -47,6 +54,95 @@ void check_throws_contains(void (*fn)(), const std::string& needle,
       ++failures;
       std::cerr << "FAIL: " << name << "\n  got : " << message
                 << "\n  want substring: " << needle << "\n";
+    }
+  }
+}
+
+std::string trim(const std::string& input) {
+  std::size_t first = input.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) {
+    return "";
+  }
+  std::size_t last = input.find_last_not_of(" \t\r\n");
+  return input.substr(first, last - first + 1);
+}
+
+std::vector<CorpusCase> read_corpus(const std::string& path) {
+  std::ifstream in(path);
+  if (!in) {
+    throw Error("could not open corpus: " + path);
+  }
+  std::vector<CorpusCase> cases;
+  CorpusCase current;
+  std::string line;
+  while (std::getline(in, line)) {
+    line = trim(line);
+    if (line.empty() || line.rfind("#", 0) == 0) {
+      continue;
+    }
+    if (line == "---") {
+      if (!current.name.empty()) {
+        cases.push_back(current);
+      }
+      current = CorpusCase{};
+      continue;
+    }
+    std::size_t colon = line.find(':');
+    if (colon == std::string::npos) {
+      throw Error("bad corpus line: " + line);
+    }
+    std::string key = trim(line.substr(0, colon));
+    std::string value = trim(line.substr(colon + 1));
+    if (key == "case") {
+      current.name = value;
+    } else {
+      current.fields[key] = value;
+    }
+  }
+  if (!current.name.empty()) {
+    cases.push_back(current);
+  }
+  return cases;
+}
+
+void corpus_round_trips() {
+  std::vector<CorpusCase> cases = read_corpus("tests/corpus/gen1.txt");
+  check(!cases.empty(), "corpus has cases");
+  for (const auto& item : cases) {
+    Arena arena;
+    Ref expected = nullptr;
+    if (auto found = item.fields.find("core"); found != item.fields.end()) {
+      expected = read_core(arena, found->second);
+      check(same_tree(expected, read_core(arena, print_core(expected))),
+            "corpus core fixpoint " + item.name);
+    }
+
+    if (auto found = item.fields.find("surface"); found != item.fields.end()) {
+      Ref surface = read_surface(arena, found->second);
+      if (expected) {
+        check(same_tree(surface, expected),
+              "corpus surface agrees " + item.name);
+      }
+      check(same_tree(surface, read_surface(arena, print_surface(surface))),
+            "corpus surface fixpoint " + item.name);
+    }
+
+    if (auto found = item.fields.find("strict"); found != item.fields.end()) {
+      Ref strict = read_strict(arena, found->second);
+      if (expected) {
+        check(same_tree(strict, expected),
+              "corpus strict agrees " + item.name);
+      }
+      check(same_tree(strict, read_strict(arena, print_strict(strict))),
+            "corpus strict fixpoint " + item.name);
+    }
+
+    if (auto found = item.fields.find("latex"); found != item.fields.end()) {
+      check(expected != nullptr, "corpus latex has core " + item.name);
+      if (expected) {
+        check_eq(print_latex(expected), found->second,
+                 "corpus latex " + item.name);
+      }
     }
   }
 }
@@ -154,6 +250,32 @@ void surface_examples() {
            "(+ (meta xs :kind seq?) (meta x :kind one))",
            "surface meta variables carry explicit kind");
   check_eq(print_surface(meta), "?xs...? + ?x", "surface prints meta vars");
+
+  Ref unary = read_surface(arena, "-x + -1");
+  check_eq(print_core(unary), "(+ (neg x) -1)", "surface unary minus");
+
+  Ref chained = read_surface(
+      arena, "simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)");
+  check_eq(print_core(chained),
+           "(simplify (sqrt (^ x 2)) :assume (>= x 0) :via sympy)",
+           "surface chained contexts");
+
+  Ref quantified = read_surface(arena, "forall[x : R](x^2 >= 0)");
+  check_eq(print_core(quantified),
+           "(forall (binder x R) (>= (^ x 2) 0))",
+           "surface forall binder");
+
+  Ref goal = read_surface(
+      arena, "goal g: exists[?F : Smooth](int[x : 0..1](?F) = pi / 4)");
+  check_eq(print_surface(goal),
+           "goal g: exists[?F : Smooth](int[x : 0..1](?F) = pi / 4)",
+           "surface goal wrapper");
+
+  Ref rule = read_surface(
+      arena, "rule pyth: sin(?a)^2 + cos(?a)^2 ~> 1 when ?a > 0");
+  check_eq(print_surface(rule),
+           "rule pyth: sin(?a) ^ 2 + cos(?a) ^ 2 ~> 1 when ?a > 0",
+           "surface rule wrapper with guard");
 }
 
 void audit_regressions() {
@@ -304,6 +426,7 @@ void diagnostics_include_locations() {
 } // namespace
 
 int main() {
+  corpus_round_trips();
   core_round_trips();
   arena_interns_and_compares_exact_trees();
   strict_round_trips();

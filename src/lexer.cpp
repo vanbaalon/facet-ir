@@ -89,7 +89,9 @@ void Lexer::next() {
             token_column};
     return;
   }
-  if (std::isdigit(static_cast<unsigned char>(c))) {
+  if (std::isdigit(static_cast<unsigned char>(c)) ||
+      (c == '-' && pos_ + 1 < input_.size() &&
+       std::isdigit(static_cast<unsigned char>(input_[pos_ + 1])))) {
     std::size_t start = pos_;
     advance();
     while (pos_ < input_.size() &&
