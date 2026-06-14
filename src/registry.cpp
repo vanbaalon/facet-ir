@@ -47,6 +47,29 @@ const OpInfo* lookup_op(const std::string& head) {
   return it != index.end() ? it->second : nullptr;
 }
 
+bool is_binder_head(const std::string& head) {
+  static const std::unordered_map<std::string, bool> heads = {
+      {"sum", true},         {"prod", true},       {"int", true},
+      {"lim", true},         {"forall", true},     {"exists", true},
+      {"diff", true},        {"plot", true},       {"plot3d", true},
+      {"parametric", true},  {"param", true},      {"contour", true},
+      {"field", true},       {"complexplot", true},{"manipulate", true},
+      {"setbuild", true},    {"seq", true},        {"fold", true},
+      {"scan", true},
+  };
+  return heads.find(head) != heads.end();
+}
+
+bool is_known_nonindexed_function(const std::string& head) {
+  static const std::unordered_map<std::string, bool> heads = {
+      {"sin", true},      {"cos", true},   {"tan", true},
+      {"log", true},      {"exp", true},   {"sqrt", true},
+      {"det", true},      {"tr", true},    {"simplify", true},
+      {"expand", true},
+  };
+  return heads.find(head) != heads.end();
+}
+
 int prec_of(const std::string& op) {
   if (op == "@") {
     return 10;

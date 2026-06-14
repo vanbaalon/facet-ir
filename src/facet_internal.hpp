@@ -47,6 +47,8 @@ struct OpInfo {
 
 const std::vector<OpInfo>& registry();
 const OpInfo* lookup_op(const std::string& head);
+bool is_binder_head(const std::string& head);
+bool is_known_nonindexed_function(const std::string& head);
 int prec_of(const std::string& op);
 bool right_assoc(const std::string& op);
 

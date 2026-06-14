@@ -283,6 +283,85 @@ void surface_examples() {
            "(forall (binder x R) (>= (^ x 2) 0))",
            "surface forall binder");
 
+  Ref vector_access = read_surface(arena, "v[i]");
+  check_eq(print_core(vector_access), "(at v i)",
+           "surface vector access lowers to at");
+  check_eq(print_surface(vector_access), "v[i]",
+           "surface vector access prints with brackets");
+  check_eq(print_latex(vector_access), "v_{i}",
+           "latex vector access prints as subscript");
+  check(same_tree(vector_access,
+                  read_surface(arena, print_surface(vector_access))),
+        "surface vector access round-trip");
+
+  Ref matrix_access = read_surface(arena, "M[i, j]");
+  check_eq(print_core(matrix_access), "(at M i j)",
+           "surface matrix access lowers to variadic at");
+  check_eq(print_surface(matrix_access), "M[i, j]",
+           "surface matrix access prints with comma-separated brackets");
+  check_eq(print_latex(matrix_access), "M_{ij}",
+           "latex matrix access prints compact subscripts");
+
+  Ref computed_access = read_surface(arena, "(f(x))[i]");
+  check_eq(print_core(computed_access), "(at (f x) i)",
+           "surface postfix access applies after calls");
+
+  Ref function_muscle_memory = read_surface(arena, "sin[x]");
+  check_eq(print_core(function_muscle_memory), "(at sin x)",
+           "surface known function bracket parses as access");
+
+  Ref vector_slice = read_surface(arena, "v[a..b]");
+  check_eq(print_core(vector_slice), "(slice v (range a b))",
+           "surface range access lowers to slice");
+  check_eq(print_surface(vector_slice), "v[a..b]",
+           "surface vector slice prints with brackets");
+  check_eq(print_latex(vector_slice), "v_{a..b}",
+           "latex vector slice prints range subscript");
+  check(same_tree(vector_slice,
+                  read_surface(arena, print_surface(vector_slice))),
+        "surface vector slice round-trip");
+
+  Ref stepped_slice = read_surface(arena, "v[a..b, step=k]");
+  check_eq(print_core(stepped_slice), "(slice v (range a b :step k))",
+           "surface stepped slice stores step on range");
+  check_eq(print_surface(stepped_slice), "v[a..b, step=k]",
+           "surface stepped slice prints step in brackets");
+  check_eq(print_latex(stepped_slice), "v_{a:k:b}",
+           "latex stepped slice prints compact stride");
+
+  Ref end_slice = read_surface(arena, "v[2..end]");
+  check_eq(print_core(end_slice), "(slice v (range 2 (end v 1)))",
+           "surface end in slice is axis-aware");
+  check_eq(print_surface(end_slice), "v[2..end]",
+           "surface end in slice prints bracket-local keyword");
+
+  Ref matrix_slice = read_surface(arena, "M[1..end, all]");
+  check_eq(print_core(matrix_slice),
+           "(slice M (range 1 (end M 1)) all)",
+           "surface matrix slice rewrites end with axis");
+  check_eq(print_surface(matrix_slice), "M[1..end, all]",
+           "surface matrix slice prints bracket-local end");
+
+  Ref dict = read_surface(arena, "dict{ \"mass\" : m }");
+  check_eq(print_core(dict), "(dict (pair \"mass\" m))",
+           "surface dict literal lowers to dict pairs");
+  check_eq(print_surface(dict), "dict{ \"mass\" : m }",
+           "surface dict literal prints with named head");
+  check(same_tree(dict, read_surface(arena, print_surface(dict))),
+        "surface dict literal round-trip");
+
+  Ref dict_access = read_surface(arena, "d[\"mass\"]");
+  check_eq(print_core(dict_access), "(at d \"mass\")",
+           "surface dict access reuses at");
+
+  Ref structural_keys = read_surface(arena, "dict{ x+y : 1, y+x : 2 }");
+  check_eq(print_core(structural_keys),
+           "(dict (pair (+ x y) 1) (pair (+ y x) 2))",
+           "surface dict keys remain structural");
+  check_eq(print_latex(read_surface(arena, "dict{ mass : m }")),
+           "\\left\\{ mass \\mapsto m \\right\\}",
+           "latex dict prints maplets");
+
   Ref goal = read_surface(
       arena, "goal g: exists[?F : Smooth](int[x : 0..1](?F) = pi / 4)");
   check_eq(print_surface(goal),
@@ -409,11 +488,17 @@ void audit_regressions() {
   check(same_tree(subst_sum, read_surface(arena, print_surface(subst_sum))),
         "subst in addition surface round-trip");
 
-  Ref custom = read_surface(arena, "custom[x : R](body)");
-  check_eq(print_surface(custom), "custom[x : R](body)",
-           "custom binder head prints as binder syntax");
-  check(same_tree(custom, read_surface(arena, print_surface(custom))),
-        "custom binder head surface round-trip");
+  Ref custom_access = read_surface(arena, "custom[i]");
+  check_eq(print_core(custom_access), "(at custom i)",
+           "custom head bracket syntax is access in v2");
+  check_eq(print_surface(custom_access), "custom[i]",
+           "custom head access prints with brackets");
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_surface(a, "custom[x : R](body)");
+      },
+      "expected ']'", "custom binder heads are rejected in v2");
 
   check_throws(
       []() {

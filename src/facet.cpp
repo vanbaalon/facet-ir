@@ -14,6 +14,7 @@ using internal::Lexer;
 using internal::attr_value;
 using internal::atom_from_token;
 using internal::escape;
+using internal::is_binder_head;
 using internal::join;
 using internal::lookup_op;
 using internal::prec_of;
@@ -280,6 +281,14 @@ private:
       }
       return arena_.compound("neg", {value});
     }
+    Ref value = atom_or_group();
+    while (lex_.take("[")) {
+      value = bracket_postfix(value);
+    }
+    return value;
+  }
+
+  Ref atom_or_group() {
     if (lex_.take("(")) {
       Ref inner = expr(0);
       lex_.expect(")");
@@ -309,8 +318,49 @@ private:
       return arena_.compound("broadcast",
                              {arena_.sym(t), arena_.compound("args", args)});
     }
-    if (lex_.take("[")) {
-      if (t == "diff") {
+    if (lex_.take("(")) {
+      std::vector<Ref> args;
+      if (!lex_.take(")")) {
+        do {
+          args.push_back(expr(0));
+        } while (lex_.take(","));
+        lex_.expect(")");
+      }
+      return arena_.compound(t, args);
+    }
+    if (lex_.take("{")) {
+      if (t == "dict") {
+        return dict_literal();
+      }
+      std::vector<Ref> args;
+      if (!lex_.take("}")) {
+        do {
+          args.push_back(expr(0));
+        } while (lex_.take(","));
+        lex_.expect("}");
+      }
+      return arena_.compound(t, args);
+    }
+    return surface_atom_from_token(arena_, t);
+  }
+
+  Ref dict_literal() {
+    std::vector<Ref> pairs;
+    if (!lex_.take("}")) {
+      do {
+        Ref key = expr(0);
+        lex_.expect(":");
+        Ref value = expr(0);
+        pairs.push_back(arena_.compound("pair", {key, value}));
+      } while (lex_.take(","));
+      lex_.expect("}");
+    }
+    return arena_.compound("dict", pairs);
+  }
+
+  Ref bracket_postfix(Ref target) {
+    if (target->tag == Tag::Sym && is_binder_head(target->text)) {
+      if (target->text == "diff") {
         std::vector<Ref> vars;
         if (!lex_.take("]")) {
           do {
@@ -345,29 +395,74 @@ private:
           "binder",
           {surface_atom_from_token(arena_, name),
            sep == "->" ? arena_.compound("approach", {domain}) : domain});
-      return arena_.compound(t, {binder, body});
+      return arena_.compound(target->text, {binder, body});
     }
-    if (lex_.take("(")) {
-      std::vector<Ref> args;
-      if (!lex_.take(")")) {
-        do {
-          args.push_back(expr(0));
-        } while (lex_.take(","));
-        lex_.expect(")");
+
+    std::vector<Ref> args = bracket_args(target);
+    lex_.expect("]");
+    bool slicing = false;
+    for (Ref arg : args) {
+      slicing = slicing ||
+                (arg->tag == Tag::Compound && arg->text == "range");
+    }
+    std::vector<Ref> out_args{target};
+    out_args.insert(out_args.end(), args.begin(), args.end());
+    return arena_.compound(slicing ? "slice" : "at", out_args);
+  }
+
+  std::vector<Ref> bracket_args(Ref target) {
+    std::vector<Ref> args;
+    if (lex_.at("]")) {
+      return args;
+    }
+    std::size_t axis = 1;
+    while (true) {
+      Ref arg = rewrite_end(expr(0), target, axis);
+      if (arg->tag == Tag::Compound && arg->text == "range" &&
+          lex_.take(",")) {
+        if (lex_.at("step")) {
+          lex_.expect("step");
+          lex_.expect("=");
+          Ref step = expr(0);
+          arg = arena_.compound("range", arg->args, {{"step", step}});
+          args.push_back(arg);
+          ++axis;
+          if (!lex_.take(",")) {
+            break;
+          }
+          continue;
+        }
+        args.push_back(arg);
+        ++axis;
+        continue;
       }
-      return arena_.compound(t, args);
-    }
-    if (lex_.take("{")) {
-      std::vector<Ref> args;
-      if (!lex_.take("}")) {
-        do {
-          args.push_back(expr(0));
-        } while (lex_.take(","));
-        lex_.expect("}");
+      args.push_back(arg);
+      ++axis;
+      if (!lex_.take(",")) {
+        break;
       }
-      return arena_.compound(t, args);
     }
-    return surface_atom_from_token(arena_, t);
+    return args;
+  }
+
+  Ref rewrite_end(Ref ref, Ref target, std::size_t axis) {
+    if (ref->tag == Tag::Sym && ref->text == "end") {
+      return arena_.compound("end", {target, arena_.integer(std::to_string(axis))});
+    }
+    if (ref->tag != Tag::Compound) {
+      return ref;
+    }
+    std::vector<Ref> args;
+    args.reserve(ref->args.size());
+    for (Ref arg : ref->args) {
+      args.push_back(rewrite_end(arg, target, axis));
+    }
+    std::vector<Attr> attrs;
+    attrs.reserve(ref->attrs.size());
+    for (const auto& attr : ref->attrs) {
+      attrs.push_back({attr.key, rewrite_end(attr.value, target, axis)});
+    }
+    return arena_.compound(ref->text, std::move(args), std::move(attrs));
   }
 
   Ref binder_tail() {
@@ -514,6 +609,26 @@ std::string binder_surface(Ref binder) {
          print_surface_prec(domain, 0);
 }
 
+std::string bracket_arg_surface(Ref ref, Ref target, std::size_t axis) {
+  if (ref->tag == Tag::Compound && ref->text == "end" &&
+      ref->args.size() == 2 && same_tree(ref->args[0], target) &&
+      ref->args[1]->tag == Tag::Int &&
+      ref->args[1]->text == std::to_string(axis)) {
+    return "end";
+  }
+  if (ref->tag == Tag::Compound && ref->text == "range" &&
+      ref->args.size() == 2) {
+    std::string out =
+        bracket_arg_surface(ref->args[0], target, axis) + ".." +
+        bracket_arg_surface(ref->args[1], target, axis);
+    if (Ref step = attr_value(ref, "step")) {
+      out += ", step=" + print_surface_prec(step, 0);
+    }
+    return out;
+  }
+  return print_surface_prec(ref, 0);
+}
+
 std::string print_surface_prec(Ref ref, int parent_prec) {
   if (ref->tag != Tag::Compound) {
     return print_atom(ref);
@@ -551,6 +666,22 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
       return "(" + out + ")";
     }
     return out;
+  }
+  if (ref->text == "at" && ref->args.size() >= 2) {
+    std::vector<std::string> parts;
+    for (std::size_t i = 1; i < ref->args.size(); ++i) {
+      parts.push_back(bracket_arg_surface(ref->args[i], ref->args[0], i));
+    }
+    return print_surface_prec(ref->args[0], 80) + "[" + join(parts, ", ") +
+           "]";
+  }
+  if (ref->text == "slice" && ref->args.size() >= 2) {
+    std::vector<std::string> parts;
+    for (std::size_t i = 1; i < ref->args.size(); ++i) {
+      parts.push_back(bracket_arg_surface(ref->args[i], ref->args[0], i));
+    }
+    return print_surface_prec(ref->args[0], 80) + "[" + join(parts, ", ") +
+           "]";
   }
   if (ref->args.size() == 2 &&
       ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder") {
@@ -602,6 +733,19 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
       out += ", " + print_surface_prec(when, 0);
     }
     return out + " }";
+  }
+  if (ref->text == "dict") {
+    std::vector<std::string> parts;
+    for (Ref arg : ref->args) {
+      if (arg->tag == Tag::Compound && arg->text == "pair" &&
+          arg->args.size() == 2) {
+        parts.push_back(print_surface_prec(arg->args[0], 0) + " : " +
+                        print_surface_prec(arg->args[1], 0));
+      } else {
+        parts.push_back(print_surface_prec(arg, 0));
+      }
+    }
+    return "dict{ " + join(parts, ", ") + " }";
   }
   if (ref->text == "set") {
     std::vector<std::string> parts;
@@ -711,6 +855,20 @@ std::string latex_binder(Ref binder) {
          print_latex_prec(domain, 0);
 }
 
+std::string latex_slice_arg(Ref ref) {
+  if (ref->tag == Tag::Compound && ref->text == "range" &&
+      ref->args.size() == 2) {
+    if (Ref step = attr_value(ref, "step")) {
+      return print_latex_prec(ref->args[0], 0) + ":" +
+             print_latex_prec(step, 0) + ":" +
+             print_latex_prec(ref->args[1], 0);
+    }
+    return print_latex_prec(ref->args[0], 0) + ".." +
+           print_latex_prec(ref->args[1], 0);
+  }
+  return print_latex_prec(ref, 0);
+}
+
 std::string print_latex_prec(Ref ref, int parent_prec) {
   if (ref->tag != Tag::Compound) {
     return latex_atom(ref);
@@ -745,6 +903,23 @@ std::string print_latex_prec(Ref ref, int parent_prec) {
       out += "\\ldots?";
     }
     return out;
+  }
+  if (ref->text == "at" && ref->args.size() >= 2) {
+    std::string out = print_latex_prec(ref->args[0], 80) + "_{";
+    for (std::size_t i = 1; i < ref->args.size(); ++i) {
+      out += print_latex_prec(ref->args[i], 0);
+    }
+    return out + "}";
+  }
+  if (ref->text == "slice" && ref->args.size() >= 2) {
+    std::string out = print_latex_prec(ref->args[0], 80) + "_{";
+    for (std::size_t i = 1; i < ref->args.size(); ++i) {
+      if (i > 1) {
+        out += ",";
+      }
+      out += latex_slice_arg(ref->args[i]);
+    }
+    return out + "}";
   }
   if (ref->text == "idx" && ref->args.size() == 2 &&
       ref->args[1]->tag == Tag::Compound && ref->args[1]->text == "down" &&
@@ -799,6 +974,19 @@ std::string print_latex_prec(Ref ref, int parent_prec) {
       out += ",\\; " + print_latex_prec(when, 0);
     }
     return out + " \\right\\}";
+  }
+  if (ref->text == "dict") {
+    std::vector<std::string> parts;
+    for (Ref arg : ref->args) {
+      if (arg->tag == Tag::Compound && arg->text == "pair" &&
+          arg->args.size() == 2) {
+        parts.push_back(print_latex_prec(arg->args[0], 0) + " \\mapsto " +
+                        print_latex_prec(arg->args[1], 0));
+      } else {
+        parts.push_back(print_latex_prec(arg, 0));
+      }
+    }
+    return "\\left\\{ " + join(parts, ", ") + " \\right\\}";
   }
   if (ref->text == "^" && ref->args.size() == 2) {
     return print_latex_prec(ref->args[0], prec_of("^") + 1) + "^{" +
