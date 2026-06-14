@@ -9,7 +9,7 @@
 
 namespace facet {
 
-enum class Tag { Sym, Int, Str, Compound };
+enum class Tag { Sym, Int, Rat, Real, Str, Compound };
 
 struct Node;
 using Ref = const Node*;
@@ -31,6 +31,8 @@ class Arena {
 public:
   Ref sym(std::string name);
   Ref integer(std::string value);
+  Ref rational(std::string numerator, std::string denominator);
+  Ref real(std::string value);
   Ref string(std::string value);
   Ref compound(std::string head, std::vector<Ref> args = {},
                std::vector<Attr> attrs = {});

@@ -39,6 +39,8 @@ void core_round_trips() {
   Arena arena;
   std::vector<std::string> corpus = {
       "(+ (^ x 2) y)",
+      "(+ 1.5 2)",
+      "\"literal\"",
       "(int (binder x (range 0 1)) (sin (* pi x)))",
       "(simplify (sqrt (^ x 2)) :assume (>= x 0))",
       "(setbuild (^ i 2) (binder i (range 1 n)) :when (> i 0))"};
@@ -47,6 +49,16 @@ void core_round_trips() {
     check(same_tree(expr, read_core(arena, print_core(expr))),
           "core round-trip " + input);
   }
+}
+
+void arena_interns_and_compares_exact_trees() {
+  Arena arena;
+  Ref one = read_core(arena, "(+ x 1)");
+  Ref again = read_core(arena, "(+ x 1)");
+  Ref different = read_core(arena, "(+ x 2)");
+  check(one == again, "arena hash-conses identical trees");
+  check(same_tree(one, again), "same_tree accepts identical structure");
+  check(!same_tree(one, different), "same_tree rejects different structure");
 }
 
 void strict_round_trips() {
@@ -62,6 +74,9 @@ void strict_round_trips() {
            "strict parses prefix calls");
   check(same_tree(expr, read_strict(arena, print_strict(expr))),
         "strict print/read fixpoint");
+
+  Ref real = read_strict(arena, "+(1.25, 2)");
+  check_eq(print_core(real), "(+ 1.25 2)", "strict parses real atoms");
 }
 
 void surface_examples() {
@@ -93,6 +108,32 @@ void surface_examples() {
   check_eq(print_core(assume),
            "(simplify (sqrt (^ x 2)) :assume (>= x 0))",
            "surface assume context attribute");
+
+  Ref lambda = read_surface(arena, "x |-> x^2");
+  check_eq(print_core(lambda), "(lam (binder x _) (^ x 2))",
+           "surface lambda lowers to lam binder");
+  check_eq(print_surface(lambda), "x |-> x ^ 2", "surface prints lambda");
+  check_eq(print_latex(lambda), "x \\mapsto x^{2}", "latex prints lambda");
+
+  Ref definition = read_surface(arena, "f := x |-> x^2");
+  check_eq(print_core(definition), "(:= f (lam (binder x _) (^ x 2)))",
+           "surface definition with lambda");
+
+  Ref arrow = read_surface(arena, "R -> R");
+  check_eq(print_core(arrow), "(-> R R)", "surface type arrow");
+
+  Ref subscript = read_surface(arena, "a_k + T_mu");
+  check_eq(print_core(subscript),
+           "(+ (idx a (down k)) (idx T (down mu)))",
+           "surface subscript lowers to idx/down");
+  check_eq(print_latex(subscript), "a_{k} + T_{mu}",
+           "latex prints subscripts");
+
+  Ref meta = read_surface(arena, "?xs...? + ?x");
+  check_eq(print_core(meta),
+           "(+ (meta xs :kind seq?) (meta x :kind one))",
+           "surface meta variables carry explicit kind");
+  check_eq(print_surface(meta), "?xs...? + ?x", "surface prints meta vars");
 }
 
 void object_round_trips() {
@@ -101,10 +142,22 @@ void object_round_trips() {
   std::string object = print_object(expr);
   check(same_tree(expr, read_object(arena, object)), "object JSON round-trip");
   check_eq(object,
-           "{\"head\":\"int\",\"args\":[{\"head\":\"binder\",\"args\":[\"x\",{"
-           "\"head\":\"range\",\"args\":[0,1]}]},{\"head\":\"sin\",\"args\":[{"
-           "\"head\":\"*\",\"args\":[\"pi\",\"x\"]}]}]}",
-           "object canonical compact JSON");
+           "{\"head\":\"int\",\"args\":[{\"head\":\"binder\",\"args\":[{"
+           "\"atom\":\"sym\",\"value\":\"x\"},{\"head\":\"range\",\"args\":[{"
+           "\"atom\":\"int\",\"value\":\"0\"},{\"atom\":\"int\",\"value\":\"1\"}"
+           "]}]},{\"head\":\"sin\",\"args\":[{\"head\":\"*\",\"args\":[{"
+           "\"atom\":\"sym\",\"value\":\"pi\"},{\"atom\":\"sym\",\"value\":\"x\"}"
+           "]}]}]}",
+           "object canonical typed JSON");
+
+  Ref str = arena.string("x");
+  Ref sym = arena.sym("x");
+  check(!same_tree(str, sym), "string atom is distinct from symbol atom");
+  check(same_tree(str, read_object(arena, print_object(str))),
+        "object string atom round-trip");
+  Ref rat = arena.rational("1", "2");
+  check(same_tree(rat, read_object(arena, print_object(rat))),
+        "object rational atom round-trip");
 }
 
 void cross_mode_agreement() {
@@ -121,7 +174,9 @@ void adversarial_grammar() {
   check_eq(print_core(read_surface(arena, "1..n")),
            "(range 1 n)", "range token beats dots");
   check_eq(print_core(read_surface(arena, "?xs...")),
-           "?xs...", "variadic token survives as meta symbol for now");
+           "(meta xs :kind seq)", "variadic token becomes explicit meta");
+  check_eq(print_core(read_surface(arena, "?xs...?")),
+           "(meta xs :kind seq?)", "optional variadic token is longest-match");
   check_throws(
       []() {
         Arena a;
@@ -139,6 +194,7 @@ void adversarial_grammar() {
 
 int main() {
   core_round_trips();
+  arena_interns_and_compares_exact_trees();
   strict_round_trips();
   surface_examples();
   object_round_trips();
