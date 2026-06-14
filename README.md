@@ -1,5 +1,9 @@
 # FacetIR
 
+<p align="center">
+  <img src="logo/logo_big.png" alt="FacetIR logo" width="360">
+</p>
+
 **Typed mathematical intermediate representation.**
 
 FacetIR is a C++ library and CLI tool that provides a single abstract syntax tree (AST) for mathematical expressions, together with a family of concrete projections. Write an expression once in friendly surface notation; read it back as an S-expression, JSON object, LaTeX string, or SymPy Python code.
