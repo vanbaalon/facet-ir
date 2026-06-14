@@ -1,0 +1,73 @@
+case: vector_access
+surface: v[i]
+strict: at(v, i)
+core: (at v i)
+latex: v_{i}
+object: {"head":"at","args":[{"atom":"sym","value":"v"},{"atom":"sym","value":"i"}]}
+---
+case: matrix_access
+surface: M[i, j]
+strict: at(M, i, j)
+core: (at M i j)
+latex: M_{ij}
+---
+case: dict_access
+surface: d["mass"]
+strict: at(d, "mass")
+core: (at d "mass")
+latex: d_{mass}
+---
+case: vector_slice
+surface: v[a..b]
+strict: slice(v, range(a, b))
+core: (slice v (range a b))
+latex: v_{a..b}
+---
+case: stepped_slice
+surface: v[a..b, step=k]
+strict: slice(v, range(a, b, step=k))
+core: (slice v (range a b :step k))
+latex: v_{a:k:b}
+object: {"head":"slice","args":[{"atom":"sym","value":"v"},{"head":"range","args":[{"atom":"sym","value":"a"},{"atom":"sym","value":"b"}],"attrs":{"step":{"atom":"sym","value":"k"}}}]}
+---
+case: end_slice
+surface: v[2..end]
+strict: slice(v, range(2, end(v, 1)))
+core: (slice v (range 2 (end v 1)))
+---
+case: matrix_slice
+surface: M[1..end, all]
+strict: slice(M, range(1, end(M, 1)), all)
+core: (slice M (range 1 (end M 1)) all)
+---
+case: dict_literal
+surface: dict{ "mass" : m, "spin" : 1 / 2 }
+strict: dict(pair("mass", m), pair("spin", /(1, 2)))
+core: (dict (pair "mass" m) (pair "spin" (/ 1 2)))
+latex: \left\{ mass \mapsto m, spin \mapsto \frac{1}{2} \right\}
+object: {"head":"dict","args":[{"head":"pair","args":[{"atom":"str","value":"mass"},{"atom":"sym","value":"m"}]},{"head":"pair","args":[{"atom":"str","value":"spin"},{"head":"/","args":[{"atom":"int","value":"1"},{"atom":"int","value":"2"}]}]}]}
+---
+case: structural_dict_keys
+surface: dict{ x + y : 1, y + x : 2 }
+strict: dict(pair(+(x, y), 1), pair(+(y, x), 2))
+core: (dict (pair (+ x y) 1) (pair (+ y x) 2))
+latex: \left\{ x + y \mapsto 1, y + x \mapsto 2 \right\}
+---
+case: named_set
+surface: set{ 1, 2, 3 }
+strict: set(1, 2, 3)
+core: (set 1 2 3)
+latex: \operatorname{set}\left(1, 2, 3\right)
+---
+case: named_seq
+surface: seq{ a, b, c }
+strict: seq(a, b, c)
+core: (seq a b c)
+latex: \operatorname{seq}\left(a, b, c\right)
+object: {"head":"seq","args":[{"atom":"sym","value":"a"},{"atom":"sym","value":"b"},{"atom":"sym","value":"c"}]}
+---
+case: named_setbuild
+surface: set{ i^2 | i : 1..n, i > 0 }
+strict: setbuild(^(i, 2), binder(i, range(1, n)), when=>(i, 0))
+core: (setbuild (^ i 2) (binder i (range 1 n)) :when (> i 0))
+latex: \left\{ i^{2} \mid i = 1,\ldots,n,\; i > 0 \right\}

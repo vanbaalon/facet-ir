@@ -105,8 +105,8 @@ std::vector<CorpusCase> read_corpus(const std::string& path) {
   return cases;
 }
 
-void corpus_round_trips() {
-  std::vector<CorpusCase> cases = read_corpus("tests/corpus/gen1.txt");
+void corpus_round_trips_for(const std::string& path) {
+  std::vector<CorpusCase> cases = read_corpus(path);
   check(!cases.empty(), "corpus has cases");
   for (const auto& item : cases) {
     Arena arena;
@@ -161,7 +161,22 @@ void corpus_round_trips() {
               "corpus sympy_srepr agrees " + item.name);
       }
     }
+
+    if (auto found = item.fields.find("object"); found != item.fields.end()) {
+      check(expected != nullptr, "corpus object has core " + item.name);
+      if (expected) {
+        check_eq(print_object(expected), found->second,
+                 "corpus object " + item.name);
+        check(same_tree(read_object(arena, found->second), expected),
+              "corpus object agrees " + item.name);
+      }
+    }
   }
+}
+
+void corpus_round_trips() {
+  corpus_round_trips_for("tests/corpus/gen1.txt");
+  corpus_round_trips_for("tests/corpus/v2-m1.txt");
 }
 
 void core_round_trips() {
