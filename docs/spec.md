@@ -614,11 +614,68 @@ plus the attribute suffix from 9.10 if attributes are present.
 
 ---
 
-## 10. SymPy Bridge
+## 10. Kernel Source, Rendering, and Compare
+
+The five projections are intrinsic FacetIR views. Kernel source/evaluation modes are external bridges and are exposed separately as `source:K`.
+
+### 10.1 `print_source(ref, kernel)`
+
+Emits source for a registered kernel mapping table. Current kernels:
+
+| Kernel | CLI emit mode | Notes |
+|--------|---------------|-------|
+| `sympy` | `emit=source:sympy` | SymPy Python expression source |
+| `python` | `emit=source:python` | Dependency-free Python `math.*` expression source |
+| `stub` | `emit=coverage:stub` | Empty mapping table used to prove generic coverage behavior |
+
+Unsupported heads are reported as structured unmapped data by `coverage(ref, kernel)` and as precise-path `facet::Error` messages during source emission.
+
+### 10.2 `coverage(ref, kernel)`
+
+Walks the tree against the kernel mapping table and returns:
+
+- `kernel`
+- `supported`
+- `total`
+- `missing[]`, each with `head`, `kernel`, and tree `path`
+
+CLI example:
+
+```sh
+echo 'sin(x) + unknown_fn(y)' | facet emit=coverage:sympy
+# coverage: 2/3 supported[kernel=sympy]
+# unmapped: root.args[1] unknown_fn kernel=sympy
+```
+
+### 10.3 `compare(arena, lhs, rhs, by)`
+
+Returns a labelled `CompareResult`. Supported modes:
+
+| Mode | Meaning |
+|------|---------|
+| `structural` | intrinsic `same_tree` comparison |
+| `simplify` | deterministic same-tree precheck, then SymPy transformer when available |
+| `numeric` | deterministic local sampled evidence |
+| `numeric(samples=N,tol=E)` | sampled evidence with explicit sample count and tolerance |
+
+Numeric comparison is evidence, not proof. Reports include `by=numeric`, `strength=evidence`, `tol`, `samples`, and a witness on disagreement.
+
+### 10.4 Renderers
+
+Rendering is an external output surface, not an intrinsic projection.
+
+| CLI emit mode | Output |
+|---------------|--------|
+| `render:svg` | SVG for primitive scenes, sampled 2D plots, and deterministic placeholders for higher plot heads |
+| `render:pdf` | minimal valid PDF document |
+| `render:png` | deterministic PNG data URI |
+| `render:html` | HTML wrapper; `manipulate` emits a slider control |
+
+## 11. SymPy Bridge
 
 The SymPy bridge provides bidirectional connectivity between FacetIR and the Python SymPy computer algebra system.
 
-### 10.1 `print_sympy(ref)`
+### 11.1 `print_sympy(ref)`
 
 Emits a SymPy Python expression string (suitable for `eval` in a SymPy context) from a FacetIR node.
 
@@ -630,13 +687,13 @@ Throws `facet::Error` on:
 - `(exists ...)` nodes
 - Compound nodes carrying attributes (unless handled by `evaluate_sympy`)
 
-### 10.2 `print_sympy_srepr(ref)`
+### 11.2 `print_sympy_srepr(ref)`
 
 Runs a Python subprocess, evaluates the SymPy expression string produced by `print_sympy`, and returns `sympy.srepr(result)` as a string.
 
 This function performs external subprocess execution. It does not catch Python exceptions; they propagate as `facet::Error`.
 
-### 10.3 `read_sympy_srepr(arena, str)`
+### 11.3 `read_sympy_srepr(arena, str)`
 
 Parses a SymPy `srepr` string back into a FacetIR node in the given arena. Supported SymPy forms:
 
@@ -665,7 +722,7 @@ Parses a SymPy `srepr` string back into a FacetIR node in the given arena. Suppo
 | `Equality(a, b)` | `(= a b)`                            |
 | Any other call `F(a, b)` | `(F a b)` (generic compound)   |
 
-### 10.4 `evaluate_sympy(arena, ref)`
+### 11.4 `evaluate_sympy(arena, ref)`
 
 High-level evaluation function. Behaviour depends on whether the input node carries a `:via sympy` attribute:
 
@@ -683,7 +740,7 @@ Assumption mapping from `:assume` conditions:
 
 ---
 
-## 11. Error Handling
+## 12. Error Handling
 
 FacetIR uses a single exception class:
 

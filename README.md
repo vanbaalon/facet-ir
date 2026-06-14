@@ -41,7 +41,9 @@ facet [read=MODE] [emit=MODE] [compare=EXPR] [by=MODE] < input
 - `read` controls the input format (default: `surface`).
 - `emit` controls the output format (default: `core`).
 
-**Read modes:** `surface`, `strict`, `core`, `object`, `sympy-srepr`
+**Read modes:** `surface`, `strict`, `core`, `object`, `source:sympy-srepr`
+
+Compatibility read alias: `sympy-srepr`.
 
 **Emit modes:** `surface`, `strict`, `core`, `object`, `latex`, `render:svg`, `render:pdf`, `render:png`, `render:html`, `coverage:K`, `source:K`, `source:sympy-srepr`, `source:sympy-core`
 

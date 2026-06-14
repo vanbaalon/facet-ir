@@ -797,16 +797,23 @@ Core:     (@ x (assume (> x 0)))
 
 ### 9.1 Emitting SymPy Expression String
 
-The `emit=sympy` mode calls `print_sympy` and produces a string suitable for Python evaluation:
+The `emit=source:sympy` mode calls `print_sympy` and produces a string suitable for Python evaluation:
 
 ```sh
-echo 'int[x : 0..1](sin(pi*x))' | facet emit=sympy
+echo 'int[x : 0..1](sin(pi*x))' | facet emit=source:sympy
 # Integral(sin(pi*x), (x, 0, 1))
 ```
 
 ```sh
-echo 'sum[k : 1..n](k ^ 2)' | facet emit=sympy
+echo 'sum[k : 1..n](k ^ 2)' | facet emit=source:sympy
 # Sum(k**2, (k, 1, n))
+```
+
+The dependency-free Python source kernel is available as `emit=source:python`:
+
+```sh
+echo 'sin(x)^2 + sqrt(y)' | facet emit=source:python
+# math.sin(x)**2+math.sqrt(y)
 ```
 
 ### 9.2 Reading SymPy srepr — Integral
@@ -879,7 +886,7 @@ Surface:  lim[x -> 0](sin * x)
 ### 9.7 evaluate_sympy — Round-Trip Without Assumption
 
 ```sh
-echo 'sqrt(x ^ 2)' | facet emit=sympy-core
+echo 'sqrt(x ^ 2)' | facet emit=source:sympy-core
 # (sqrt (^ x 2))   [no simplification without assumption]
 ```
 
@@ -888,7 +895,7 @@ When `:via sympy` is absent, `evaluate_sympy` performs a `print_sympy_srepr` rou
 ### 9.8 evaluate_sympy — With `@via(sympy)` and `@assume`
 
 ```sh
-echo 'simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)' | facet emit=sympy-core
+echo 'simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)' | facet emit=source:sympy-core
 # (x)   [SymPy simplifies sqrt(x^2) to x under x >= 0]
 ```
 
