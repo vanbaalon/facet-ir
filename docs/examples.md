@@ -427,47 +427,58 @@ LaTeX:    f \sim g
 ### 5.1 Set Literal
 
 ```
-Surface:  { 1, 2, 3 }
+Surface:  set{ 1, 2, 3 }
 Strict:   set(1, 2, 3)
 Core:     (set 1 2 3)
 LaTeX:    \operatorname{set}\left(1, 2, 3\right)
 ```
 
-The `set` compound has no dedicated LaTeX rule; it falls through to the generic fallback. Use `setbuild` (§5.3–5.6) when display-quality LaTeX braces are needed.
+The v2 surface form names the collection head. The legacy bare `{ 1, 2, 3 }` form remains readable as a compatibility spelling for `set{ 1, 2, 3 }`.
 
 ### 5.2 Set Literal with Expressions
 
 ```
-Surface:  { x ^ 2, x ^ 3 }
+Surface:  set{ x ^ 2, x ^ 3 }
 Strict:   set(^(x, 2), ^(x, 3))
 Core:     (set (^ x 2) (^ x 3))
 LaTeX:    \operatorname{set}\left(x^{2}, x^{3}\right)
 ```
 
-### 5.3 Set-Builder Without Condition
+### 5.3 Sequence Literal
 
 ```
-Surface:  { x ^ 2 | x : N }
+Surface:  seq{ a, b, c }
+Strict:   seq(a, b, c)
+Core:     (seq a b c)
+LaTeX:    \operatorname{seq}\left(a, b, c\right)
+```
+
+`seq` is an ordered collection head; it uses the same `{ }` aggregate syntax as `set`, but preserves order by head semantics.
+
+### 5.4 Set-Builder Without Condition
+
+```
+Surface:  set{ x ^ 2 | x : N }
 Strict:   setbuild(^(x, 2), binder(x, N))
 Core:     (setbuild (^ x 2) (binder x N))
 LaTeX:    \left\{ x^{2} \mid x \in N \right\}
 ```
 
-### 5.4 Set-Builder With Range Domain
+### 5.5 Set-Builder With Range Domain
 
 ```
-Surface:  { x ^ 2 | x : 1..n }
+Surface:  set{ x ^ 2 | x : 1..n }
 Strict:   setbuild(^(x, 2), binder(x, range(1, n)))
 Core:     (setbuild (^ x 2) (binder x (range 1 n)))
 LaTeX:    \left\{ x^{2} \mid x = 1,\ldots,n \right\}
 ```
 
-### 5.5 Set-Builder With Condition
+### 5.6 Set-Builder With Condition
 
 From the test notebook (confirmed output):
 
 ```
-Surface:  { i ^ 2 | i : 1..n, i > 0 }
+Surface:  set{ i ^ 2 | i : 1..n, i > 0 }
 Strict:   setbuild(^(i, 2), binder(i, range(1, n)), when=>(i, 0))
 Core:     (setbuild (^ i 2) (binder i (range 1 n)) :when (> i 0))
 LaTeX:    \left\{ i^{2} \mid i = 1,\ldots,n,\; i > 0 \right\}
@@ -475,10 +486,10 @@ LaTeX:    \left\{ i^{2} \mid i = 1,\ldots,n,\; i > 0 \right\}
 
 The condition after the comma becomes the `:when` attribute of the `setbuild` node.
 
-### 5.6 Set-Builder With Named Domain and Condition
+### 5.7 Set-Builder With Named Domain and Condition
 
 ```
-Surface:  { f(x) | x : S, f(x) != 0 }
+Surface:  set{ f(x) | x : S, f(x) != 0 }
 Strict:   setbuild(f(x), binder(x, S), when!=(f(x), 0))
 Core:     (setbuild (f x) (binder x S) :when (!= (f x) 0))
 LaTeX:    \left\{ \operatorname{f}\left(x\right) \mid x \in S,\; \operatorname{f}\left(x\right) \ne 0 \right\}

@@ -333,6 +333,9 @@ private:
       if (t == "dict") {
         return dict_literal();
       }
+      if (t == "set" || t == "seq") {
+        return collection_literal(t);
+      }
       std::vector<Ref> args;
       if (!lex_.take("}")) {
         do {
@@ -362,6 +365,28 @@ private:
       lex_.expect("}");
     }
     return arena_.compound("dict", pairs);
+  }
+
+  Ref collection_literal(const std::string& head) {
+    if (lex_.take("}")) {
+      return arena_.compound(head);
+    }
+    Ref first = expr(0);
+    if (head == "set" && lex_.take("|")) {
+      Ref b = binder_tail();
+      std::vector<Attr> attrs;
+      if (lex_.take(",")) {
+        attrs.push_back({"when", expr(0)});
+      }
+      lex_.expect("}");
+      return arena_.compound("setbuild", {first, b}, attrs);
+    }
+    std::vector<Ref> args{first};
+    while (lex_.take(",")) {
+      args.push_back(expr(0));
+    }
+    lex_.expect("}");
+    return arena_.compound(head, args);
   }
 
   Ref bracket_postfix(Ref target) {
@@ -733,7 +758,7 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
     return out;
   }
   if (ref->text == "setbuild" && ref->args.size() == 2) {
-    std::string out = "{ " + print_surface_prec(ref->args[0], 0) + " | " +
+    std::string out = "set{ " + print_surface_prec(ref->args[0], 0) + " | " +
                       binder_surface(ref->args[1]);
     if (Ref when = attr_value(ref, "when")) {
       out += ", " + print_surface_prec(when, 0);
@@ -753,12 +778,12 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
     }
     return "dict{ " + join(parts, ", ") + " }";
   }
-  if (ref->text == "set") {
+  if (ref->text == "set" || ref->text == "seq") {
     std::vector<std::string> parts;
     for (Ref arg : ref->args) {
       parts.push_back(print_surface_prec(arg, 0));
     }
-    return "{ " + join(parts, ", ") + " }";
+    return ref->text + "{ " + join(parts, ", ") + " }";
   }
   if (ref->text == "broadcast" && ref->args.size() == 2 &&
       ref->args[1]->tag == Tag::Compound && ref->args[1]->text == "args") {

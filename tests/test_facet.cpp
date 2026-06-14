@@ -233,6 +233,12 @@ void surface_examples() {
   check_eq(print_core(setbuild),
            "(setbuild (^ i 2) (binder i (range 1 n)) :when (> i 0))",
            "surface set-builder");
+  check_eq(print_surface(setbuild), "set{ i ^ 2 | i : 1..n, i > 0 }",
+           "surface set-builder prints named set head");
+
+  Ref named_setbuild = read_surface(arena, "set{ i^2 | i : 1..n, i > 0 }");
+  check(same_tree(named_setbuild, setbuild),
+        "surface named set-builder agrees with bare compatibility form");
 
   Ref subst = read_surface(arena, "(x^2 + y) @ subst{x = 2}");
   check_eq(print_core(subst), "(subst (+ (^ x 2) y) (= x 2))",
@@ -654,12 +660,23 @@ void validator_warnings() {
 void new_feature_regressions() {
   Arena arena;
 
-  // set literal: { } notation survives surface round-trip
+  // set literal: bare { } remains readable, named set{ } is canonical v2
   Ref set3 = read_surface(arena, "{ 1, 2, 3 }");
   check_eq(print_core(set3), "(set 1 2 3)", "set literal lowers to set compound");
-  check_eq(print_surface(set3), "{ 1, 2, 3 }", "set literal prints with braces");
+  check_eq(print_surface(set3), "set{ 1, 2, 3 }",
+           "set literal prints with named set head");
   check(same_tree(set3, read_surface(arena, print_surface(set3))),
         "set literal surface round-trip");
+
+  Ref named_set = read_surface(arena, "set{ 1, 2, 3 }");
+  check(same_tree(named_set, set3), "named set literal parses to set compound");
+
+  Ref seq = read_surface(arena, "seq{ a, b, c }");
+  check_eq(print_core(seq), "(seq a b c)", "seq literal lowers to seq compound");
+  check_eq(print_surface(seq), "seq{ a, b, c }",
+           "seq literal prints with named seq head");
+  check(same_tree(seq, read_surface(arena, print_surface(seq))),
+        "seq literal surface round-trip");
 
   // broadcast: f.(args) notation survives surface round-trip
   Ref bc = read_surface(arena, "f.(a, b)");
