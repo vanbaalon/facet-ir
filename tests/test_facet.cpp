@@ -144,6 +144,14 @@ void corpus_round_trips() {
                  "corpus latex " + item.name);
       }
     }
+
+    if (auto found = item.fields.find("sympy"); found != item.fields.end()) {
+      check(expected != nullptr, "corpus sympy has core " + item.name);
+      if (expected) {
+        check_eq(print_sympy(expected), found->second,
+                 "corpus sympy " + item.name);
+      }
+    }
   }
 }
 
@@ -292,6 +300,32 @@ void latex_examples() {
            "?xs\\ldots?", "latex optional sequence meta");
   check_eq(print_latex(read_surface(arena, "-(a + b)")),
            "-\\left(a + b\\right)", "latex negation parentheses");
+}
+
+void sympy_examples() {
+  Arena arena;
+  check_eq(print_sympy(read_surface(arena, "int[x : 0..1](sin(pi*x))")),
+           "Integral(sin(pi*x), (x, 0, 1))", "sympy integral");
+  check_eq(print_sympy(read_surface(arena, "sum[x : 0..1](x * 2 + 1)")),
+           "Sum(x*2+1, (x, 0, 1))", "sympy finite sum");
+  check_eq(print_sympy(read_surface(arena, "sqrt(x^2)")),
+           "sqrt(x**2)", "sympy sqrt power");
+  check_eq(print_sympy(read_surface(arena, "x |-> x^2")),
+           "Lambda(x, x**2)", "sympy lambda");
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)print_sympy(read_surface(
+            a, "rule pyth: sin(?a)^2 + cos(?a)^2 ~> 1 when ?a > 0"));
+      },
+      "SymPy emit does not support rule", "sympy rejects rules");
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)print_sympy(
+            read_surface(a, "simplify(sqrt(x^2)) @ assume(x >= 0)"));
+      },
+      "attributed expression", "sympy rejects attributed expressions");
 }
 
 void audit_regressions() {
@@ -448,6 +482,7 @@ int main() {
   strict_round_trips();
   surface_examples();
   latex_examples();
+  sympy_examples();
   audit_regressions();
   object_round_trips();
   cross_mode_agreement();

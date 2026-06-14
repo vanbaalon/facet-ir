@@ -63,6 +63,7 @@ Ref read_object(Arena& arena, const std::string& input);
 std::string print_object(Ref ref);
 
 std::string print_latex(Ref ref);
+std::string print_sympy(Ref ref);
 
 bool same_tree(Ref lhs, Ref rhs);
 

@@ -3,6 +3,7 @@ surface: int[x : 0..1](sin(pi*x))
 strict: int(binder(x, range(0, 1)), sin(*(pi, x)))
 core: (int (binder x (range 0 1)) (sin (* pi x)))
 latex: \int_{0}^{1} \sin\left(\pi x\right)\,dx
+sympy: Integral(sin(pi*x), (x, 0, 1))
 ---
 case: lambda_definition
 surface: f := x |-> x^2
@@ -15,6 +16,7 @@ surface: -x + -1
 strict: +(neg(x), -1)
 core: (+ (neg x) -1)
 latex: -x + -1
+sympy: -x+-1
 ---
 case: chained_contexts
 surface: simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)
@@ -39,3 +41,9 @@ surface: rule pyth: sin(?a)^2 + cos(?a)^2 ~> 1 when ?a > 0
 strict: rule(pyth, forall(meta(a, kind=one), ~>(+(^(sin(meta(a, kind=one)), 2), ^(cos(meta(a, kind=one)), 2)), 1), when=>(meta(a, kind=one), 0)))
 core: (rule pyth (forall (meta a :kind one) (~> (+ (^ (sin (meta a :kind one)) 2) (^ (cos (meta a :kind one)) 2)) 1) :when (> (meta a :kind one) 0)))
 latex: \operatorname{rule}_{\mathrm{pyth}}: \sin\left(?a\right)^{2} + \cos\left(?a\right)^{2} \to 1\;\operatorname{when}\;?a > 0
+---
+case: finite_sum
+surface: sum[x : 0..1](x * 2 + 1)
+strict: sum(binder(x, range(0, 1)), +(*(x, 2), 1))
+core: (sum (binder x (range 0 1)) (+ (* x 2) 1))
+sympy: Sum(x*2+1, (x, 0, 1))

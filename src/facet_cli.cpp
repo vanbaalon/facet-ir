@@ -16,7 +16,7 @@ std::string option_value(const std::string& arg, const std::string& key) {
 
 void usage() {
   std::cerr << "usage: facet read=<surface|strict|core|object> "
-               "emit=<surface|strict|core|object|latex> < input\n";
+               "emit=<surface|strict|core|object|latex|sympy> < input\n";
 }
 
 } // namespace
@@ -65,6 +65,8 @@ int main(int argc, char** argv) {
       std::cout << facet::print_object(expr) << "\n";
     } else if (emit == "latex") {
       std::cout << facet::print_latex(expr) << "\n";
+    } else if (emit == "sympy") {
+      std::cout << facet::print_sympy(expr) << "\n";
     } else {
       usage();
       return 2;

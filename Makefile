@@ -2,7 +2,7 @@ CXX ?= c++
 CXXFLAGS ?= -std=c++20 -Wall -Wextra -Wpedantic -Iinclude
 
 BUILD := build
-LIB_SRCS := src/ast.cpp src/lexer.cpp src/registry.cpp src/facet.cpp
+LIB_SRCS := src/ast.cpp src/lexer.cpp src/registry.cpp src/facet.cpp src/sympy.cpp
 LIB_OBJS := $(LIB_SRCS:src/%.cpp=$(BUILD)/%.o)
 TEST_BIN := $(BUILD)/test_facet
 CLI_BIN := $(BUILD)/facet

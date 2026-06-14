@@ -13,7 +13,8 @@ add_library(facet
   src/ast.cpp
   src/lexer.cpp
   src/registry.cpp
-  src/facet.cpp)
+  src/facet.cpp
+  src/sympy.cpp)
 
 target_include_directories(facet
   PUBLIC
