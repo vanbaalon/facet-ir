@@ -894,6 +894,32 @@ void primitive_svg_renderer() {
       "primitive renderer reports unsupported heads");
 }
 
+void plot_svg_renderer() {
+  Arena arena;
+  Ref plot = read_surface(arena, "plot[x : 0..1](x^2)");
+  check_eq(
+      render_svg(plot),
+      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 400 400\">"
+      "<polyline points=\"200,200 205,198.75 210,195 215,188.75 "
+      "220,180\" fill=\"none\" stroke=\"black\" stroke-width=\"2\" /></svg>",
+      "plot renderer samples numeric range to SVG polyline");
+
+  Ref trig = read_surface(arena, "plot[x : 0..0](sin(pi*x))");
+  check_eq(
+      render_svg(trig),
+      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 400 400\">"
+      "<polyline points=\"200,200 200,200 200,200 200,200 200,200\" "
+      "fill=\"none\" stroke=\"black\" stroke-width=\"2\" /></svg>",
+      "plot renderer evaluates simple trig expressions");
+
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)render_svg(read_surface(a, "plot[x : 0..1](a*x)"));
+      },
+      "cannot evaluate symbol", "plot renderer reports unsupported symbols");
+}
+
 void new_feature_regressions() {
   Arena arena;
 
@@ -979,6 +1005,7 @@ int main() {
   loop_and_branch_blocks();
   graphics_syntax_round_trips();
   primitive_svg_renderer();
+  plot_svg_renderer();
   new_feature_regressions();
 
   if (failures) {

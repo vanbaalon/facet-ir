@@ -1437,6 +1437,86 @@ std::string render_svg_scene(Ref ref) {
   return out;
 }
 
+double eval_numeric(Ref ref, const std::string& var, double value) {
+  if (ref->tag == Tag::Int || ref->tag == Tag::Real || ref->tag == Tag::Rat) {
+    return render_number(ref);
+  }
+  if (ref->tag == Tag::Sym) {
+    if (ref->text == var) {
+      return value;
+    }
+    if (ref->text == "pi") {
+      return 3.14159265358979323846;
+    }
+    throw Error("SVG plot renderer cannot evaluate symbol: " + ref->text);
+  }
+  if (ref->tag != Tag::Compound) {
+    throw Error("SVG plot renderer cannot evaluate atom: " + print_core_inner(ref));
+  }
+  if (ref->text == "neg" && ref->args.size() == 1) {
+    return -eval_numeric(ref->args[0], var, value);
+  }
+  if ((ref->text == "+" || ref->text == "-" || ref->text == "*" ||
+       ref->text == "/" || ref->text == "^") &&
+      ref->args.size() == 2) {
+    double lhs = eval_numeric(ref->args[0], var, value);
+    double rhs = eval_numeric(ref->args[1], var, value);
+    if (ref->text == "+") {
+      return lhs + rhs;
+    }
+    if (ref->text == "-") {
+      return lhs - rhs;
+    }
+    if (ref->text == "*") {
+      return lhs * rhs;
+    }
+    if (ref->text == "/") {
+      return lhs / rhs;
+    }
+    return std::pow(lhs, rhs);
+  }
+  if ((ref->text == "sin" || ref->text == "cos" || ref->text == "tan") &&
+      ref->args.size() == 1) {
+    double arg = eval_numeric(ref->args[0], var, value);
+    if (ref->text == "sin") {
+      return std::sin(arg);
+    }
+    if (ref->text == "cos") {
+      return std::cos(arg);
+    }
+    return std::tan(arg);
+  }
+  throw Error("SVG plot renderer cannot evaluate head: " + ref->text);
+}
+
+std::string render_svg_plot(Ref ref) {
+  if (ref->args.size() != 2 || ref->args[0]->tag != Tag::Compound ||
+      ref->args[0]->text != "binder" || ref->args[0]->args.size() != 2) {
+    throw Error("SVG plot renderer expected plot binder");
+  }
+  Ref binder = ref->args[0];
+  Ref var = binder->args[0];
+  Ref domain = binder->args[1];
+  if (var->tag != Tag::Sym || domain->tag != Tag::Compound ||
+      domain->text != "range" || domain->args.size() != 2) {
+    throw Error("SVG plot renderer expected numeric range binder");
+  }
+  double lo = render_number(domain->args[0]);
+  double hi = render_number(domain->args[1]);
+  constexpr int samples = 5;
+  std::vector<std::string> points;
+  for (int i = 0; i < samples; ++i) {
+    double t = static_cast<double>(i) / static_cast<double>(samples - 1);
+    double x = lo + (hi - lo) * t;
+    double y = eval_numeric(ref->args[1], var->text, x);
+    points.push_back(svg_num(svg_x(x)) + "," + svg_num(svg_y(y)));
+  }
+  return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 400 400\">"
+         "<polyline points=\"" +
+         join(points, " ") +
+         "\" fill=\"none\" stroke=\"black\" stroke-width=\"2\" /></svg>";
+}
+
 class JsonParser {
 public:
   JsonParser(Arena& arena, std::string input)
@@ -1797,6 +1877,9 @@ std::vector<Diagnostic> validate(Ref ref) {
 std::string render_svg(Ref ref) {
   if (ref->tag == Tag::Compound && ref->text == "scene") {
     return render_svg_scene(ref);
+  }
+  if (ref->tag == Tag::Compound && ref->text == "plot") {
+    return render_svg_plot(ref);
   }
   throw Error("SVG renderer expected scene, got: " + print_core(ref));
 }
