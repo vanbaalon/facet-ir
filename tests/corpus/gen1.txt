@@ -4,6 +4,7 @@ strict: int(binder(x, range(0, 1)), sin(*(pi, x)))
 core: (int (binder x (range 0 1)) (sin (* pi x)))
 latex: \int_{0}^{1} \sin\left(\pi x\right)\,dx
 sympy: Integral(sin(pi*x), (x, 0, 1))
+sympy_srepr: Integral(sin(Mul(pi, Symbol('x'))), Tuple(Symbol('x'), Integer(0), Integer(1)))
 ---
 case: lambda_definition
 surface: f := x |-> x^2
@@ -17,6 +18,7 @@ strict: +(neg(x), -1)
 core: (+ (neg x) -1)
 latex: -x + -1
 sympy: -x+-1
+sympy_srepr: Add(Mul(Integer(-1), Symbol('x')), Integer(-1))
 ---
 case: chained_contexts
 surface: simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)
@@ -47,3 +49,4 @@ surface: sum[x : 0..1](x * 2 + 1)
 strict: sum(binder(x, range(0, 1)), +(*(x, 2), 1))
 core: (sum (binder x (range 0 1)) (+ (* x 2) 1))
 sympy: Sum(x*2+1, (x, 0, 1))
+sympy_srepr: Sum(Add(Mul(Symbol('x'), Integer(2)), Integer(1)), Tuple(Symbol('x'), Integer(0), Integer(1)))

@@ -15,7 +15,7 @@ std::string option_value(const std::string& arg, const std::string& key) {
 }
 
 void usage() {
-  std::cerr << "usage: facet read=<surface|strict|core|object> "
+  std::cerr << "usage: facet read=<surface|strict|core|object|sympy-srepr> "
                "emit=<surface|strict|core|object|latex|sympy> < input\n";
 }
 
@@ -50,6 +50,8 @@ int main(int argc, char** argv) {
       expr = facet::read_core(arena, input);
     } else if (read == "object") {
       expr = facet::read_object(arena, input);
+    } else if (read == "sympy-srepr") {
+      expr = facet::read_sympy_srepr(arena, input);
     } else {
       usage();
       return 2;

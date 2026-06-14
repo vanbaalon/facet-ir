@@ -62,6 +62,7 @@ std::string print_surface(Ref ref);
 Ref read_object(Arena& arena, const std::string& input);
 std::string print_object(Ref ref);
 
+Ref read_sympy_srepr(Arena& arena, const std::string& input);
 std::string print_latex(Ref ref);
 std::string print_sympy(Ref ref);
 

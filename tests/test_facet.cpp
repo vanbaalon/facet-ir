@@ -152,6 +152,15 @@ void corpus_round_trips() {
                  "corpus sympy " + item.name);
       }
     }
+
+    if (auto found = item.fields.find("sympy_srepr");
+        found != item.fields.end()) {
+      check(expected != nullptr, "corpus sympy_srepr has core " + item.name);
+      if (expected) {
+        check(same_tree(read_sympy_srepr(arena, found->second), expected),
+              "corpus sympy_srepr agrees " + item.name);
+      }
+    }
   }
 }
 
@@ -326,6 +335,30 @@ void sympy_examples() {
             read_surface(a, "simplify(sqrt(x^2)) @ assume(x >= 0)"));
       },
       "attributed expression", "sympy rejects attributed expressions");
+
+  check_eq(print_core(read_sympy_srepr(
+               arena, "Integral(sin(Mul(pi, Symbol('x'))), "
+                      "Tuple(Symbol('x'), Integer(0), Integer(1)))")),
+           "(int (binder x (range 0 1)) (sin (* pi x)))",
+           "sympy srepr reads integral");
+  check_eq(print_core(read_sympy_srepr(
+               arena, "Sum(Add(Mul(Symbol('x'), Integer(2)), Integer(1)), "
+                      "Tuple(Symbol('x'), Integer(0), Integer(1)))")),
+           "(sum (binder x (range 0 1)) (+ (* x 2) 1))",
+           "sympy srepr reads sum");
+  check_eq(print_core(read_sympy_srepr(
+               arena, "Lambda(Tuple(Symbol('x')), Pow(Symbol('x'), Integer(2)))")),
+           "(lam (binder x _) (^ x 2))",
+           "sympy srepr reads lambda tuple");
+  check_eq(print_core(read_sympy_srepr(
+               arena, "Add(Mul(Integer(-1), Symbol('x')), Integer(-1))")),
+           "(+ (neg x) -1)", "sympy srepr normalizes unary minus");
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_sympy_srepr(a, "Derivative(Symbol('x'), Symbol('x'))");
+      },
+      "does not support head: Derivative", "sympy srepr rejects derivative");
 }
 
 void audit_regressions() {
