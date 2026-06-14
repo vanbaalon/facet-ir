@@ -819,6 +819,54 @@ void loop_and_branch_blocks() {
            "surface break and continue lower to nullary statements");
 }
 
+void graphics_syntax_round_trips() {
+  Arena arena;
+
+  Ref plot = read_surface(arena, "plot[x : 0..1](x^2)");
+  check_eq(print_core(plot), "(plot (binder x (range 0 1)) (^ x 2))",
+           "surface plot lowers through binder machinery");
+  check_eq(print_surface(plot), "plot[x : 0..1](x ^ 2)",
+           "surface plot prints binder syntax");
+  check(same_tree(plot, read_surface(arena, print_surface(plot))),
+        "surface plot round-trip");
+
+  Ref param = read_surface(arena, "param[t : 0..1](point(t, t^2))");
+  check_eq(print_core(param),
+           "(parametric (binder t (range 0 1)) (point t (^ t 2)))",
+           "surface param alias canonicalizes to parametric");
+  check_eq(print_surface(param), "parametric[t : 0..1](point(t, t ^ 2))",
+           "surface parametric prints canonical head");
+
+  Ref scene = read_surface(
+      arena, "scene{ point(0, 0), segment(point(0, 0), point(1, 1)) }");
+  check_eq(print_core(scene),
+           "(scene (point 0 0) (segment (point 0 0) (point 1 1)))",
+           "surface scene literal lowers to ordered scene head");
+  check_eq(print_surface(scene),
+           "scene{ point(0, 0), segment(point(0, 0), point(1, 1)) }",
+           "surface scene prints with collection braces");
+  check(same_tree(scene, read_surface(arena, print_surface(scene))),
+        "surface scene round-trip");
+
+  Ref styled = read_surface(
+      arena,
+      "plot[x : 0..1](x) @ style(color = blue, width = 2) @ "
+      "view(yrange = -1..1) @ render(format = svg)");
+  check_eq(
+      print_core(styled),
+      "(plot (binder x (range 0 1)) x :render (render (= format svg)) "
+      ":style (style (= color blue) (= width 2)) :view (view (= yrange "
+      "(range -1 1))))",
+      "surface graphics contexts attach as attributes");
+  check_eq(
+      print_surface(styled),
+      "plot[x : 0..1](x) @ render(format = svg) @ "
+      "style(color = blue, width = 2) @ view(yrange = -1..1)",
+      "surface graphics contexts print as context calls");
+  check(same_tree(styled, read_surface(arena, print_surface(styled))),
+        "surface graphics contexts round-trip");
+}
+
 void new_feature_regressions() {
   Arena arena;
 
@@ -902,6 +950,7 @@ int main() {
   layout_lexer_tests();
   minimal_do_blocks();
   loop_and_branch_blocks();
+  graphics_syntax_round_trips();
   new_feature_regressions();
 
   if (failures) {

@@ -391,6 +391,7 @@ private:
 
   Ref bracket_postfix(Ref target) {
     if (target->tag == Tag::Sym && is_binder_head(target->text)) {
+      std::string head = target->text == "param" ? "parametric" : target->text;
       if (target->text == "diff") {
         std::vector<Ref> vars;
         if (!lex_.take("]")) {
@@ -404,7 +405,7 @@ private:
         lex_.expect(")");
         std::vector<Ref> args{body};
         args.insert(args.end(), vars.begin(), vars.end());
-        return arena_.compound("diff", args);
+        return arena_.compound(head, args);
       }
       if (lex_.at("]")) {
         throw Error("empty binder at line " + std::to_string(lex_.peek().line) +
@@ -426,7 +427,7 @@ private:
           "binder",
           {surface_atom_from_token(arena_, name),
            sep == "->" ? arena_.compound("approach", {domain}) : domain});
-      return arena_.compound(target->text, {binder, body});
+      return arena_.compound(head, {binder, body});
     }
 
     std::vector<Ref> args = bracket_args(target);
@@ -530,6 +531,14 @@ private:
         context->args.size() == 1 && context->attrs.empty()) {
       std::vector<Attr> attrs = target->attrs;
       attrs.push_back({context->text, context->args[0]});
+      return arena_.compound(target->text, target->args, attrs);
+    }
+    if (context->tag == Tag::Compound &&
+        (context->text == "style" || context->text == "view" ||
+         context->text == "render") &&
+        context->attrs.empty()) {
+      std::vector<Attr> attrs = target->attrs;
+      attrs.push_back({context->text, context});
       return arena_.compound(target->text, target->args, attrs);
     }
     return arena_.compound("@", {target, context});
@@ -810,6 +819,24 @@ std::string bracket_arg_surface(Ref ref, Ref target, std::size_t axis) {
   return print_surface_prec(ref, 0);
 }
 
+std::string surface_attr_suffix(Ref ref) {
+  std::string out;
+  for (const auto& attr : ref->attrs) {
+    if ((attr.key == "style" || attr.key == "view" ||
+         attr.key == "render") &&
+        attr.value->tag == Tag::Compound && attr.value->text == attr.key) {
+      std::vector<std::string> context_parts;
+      for (Ref arg : attr.value->args) {
+        context_parts.push_back(print_surface_prec(arg, 0));
+      }
+      out += " @ " + attr.key + "(" + join(context_parts, ", ") + ")";
+    } else {
+      out += " @ " + attr.key + "(" + print_surface_prec(attr.value, 0) + ")";
+    }
+  }
+  return out;
+}
+
 std::string print_surface_prec(Ref ref, int parent_prec) {
   if (ref->tag != Tag::Compound) {
     return print_atom(ref);
@@ -867,7 +894,8 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
   if (ref->args.size() == 2 &&
       ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder") {
     return ref->text + "[" + binder_surface(ref->args[0]) + "](" +
-           print_surface_prec(ref->args[1], 0) + ")";
+           print_surface_prec(ref->args[1], 0) + ")" +
+           surface_attr_suffix(ref);
   }
   if (ref->text == "idx" && ref->args.size() == 2 &&
       ref->args[1]->tag == Tag::Compound && ref->args[1]->text == "down" &&
@@ -928,6 +956,13 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
     }
     return "dict{ " + join(parts, ", ") + " }";
   }
+  if (ref->text == "scene") {
+    std::vector<std::string> parts;
+    for (Ref arg : ref->args) {
+      parts.push_back(print_surface_prec(arg, 0));
+    }
+    return "scene{ " + join(parts, ", ") + " }";
+  }
   if (ref->text == "set" || ref->text == "seq") {
     std::vector<std::string> parts;
     for (Ref arg : ref->args) {
@@ -978,10 +1013,7 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
     parts.push_back(print_surface_prec(arg, 0));
   }
   std::string out = ref->text + "(" + join(parts, ", ") + ")";
-  for (const auto& attr : ref->attrs) {
-    out += " @ " + attr.key + "(" + print_surface_prec(attr.value, 0) + ")";
-  }
-  return out;
+  return out + surface_attr_suffix(ref);
 }
 
 std::string print_latex_prec(Ref ref, int parent_prec);
