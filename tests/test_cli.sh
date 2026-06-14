@@ -14,6 +14,21 @@ expect() {
   fi
 }
 
+expect_contains() {
+  name="$1"
+  input="$2"
+  needle="$3"
+  shift 3
+  got="$(printf '%s' "$input" | "$facet" "$@")"
+  case "$got" in
+    *"$needle"*) ;;
+    *)
+      printf 'FAIL: %s\n  got : %s\n  want substring: %s\n' "$name" "$got" "$needle" >&2
+      exit 1
+      ;;
+  esac
+}
+
 EXPECT='Integral(sin(pi*x), (x, 0, 1))'
 expect "source:sympy alias" 'int[x : 0..1](sin(pi*x))' emit=source:sympy
 
@@ -27,6 +42,16 @@ expect "render svg CLI" 'scene{ point(0, 0) }' emit=render:svg
 
 EXPECT='[{"offset":0,"length":3,"type":"binder_head","modifiers":[]},{"offset":3,"length":1,"type":"punctuation","modifiers":[]},{"offset":4,"length":1,"type":"binder_var","modifiers":["declaration"]},{"offset":6,"length":1,"type":"punctuation","modifiers":[]},{"offset":8,"length":1,"type":"number","modifiers":[]},{"offset":9,"length":2,"type":"operator","modifiers":[]},{"offset":11,"length":1,"type":"free_var","modifiers":[]},{"offset":12,"length":1,"type":"punctuation","modifiers":[]},{"offset":13,"length":1,"type":"punctuation","modifiers":[]},{"offset":14,"length":1,"type":"function_call","modifiers":[]},{"offset":15,"length":1,"type":"punctuation","modifiers":[]},{"offset":16,"length":1,"type":"free_var","modifiers":[]},{"offset":17,"length":1,"type":"punctuation","modifiers":[]},{"offset":18,"length":1,"type":"punctuation","modifiers":[]}]'
 expect "semantic tokens CLI" 'sum[i : 1..n](f(x))' emit=semantic-tokens
+
+EXPECT='{"head":"point","parameters":["x","y"],"activeParameter":1,"documentation":"Facet call signature for point"}'
+expect "signature help CLI" 'point(1, 2)' emit=signature:8
+
+EXPECT='[{"label":"assume","kind":"Keyword","detail":"assume(condition)","documentation":"Attach assumptions for kernel evaluation."},{"label":"via","kind":"Keyword","detail":"via(kernel)","documentation":"Select an external kernel."},{"label":"style","kind":"Property","detail":"style(key=value, ...)","documentation":"Attach rendering style metadata."},{"label":"render","kind":"Property","detail":"render(format=...)","documentation":"Attach rendering metadata."}]'
+expect "completions CLI" 'simplify(x) @' emit=completions:13
+
+lsp_init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+lsp_msg="$(printf 'Content-Length: %s\r\n\r\n%s' "${#lsp_init}" "$lsp_init")"
+expect_contains "lsp initialize" "$lsp_msg" '"semanticTokensProvider"' --lsp
 
 EXPECT='math.sin(x)**2+math.sqrt(y)'
 expect "source python CLI" 'sin(x)^2 + sqrt(y)' emit=source:python

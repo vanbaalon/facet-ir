@@ -889,6 +889,41 @@ void semantic_token_tests() {
   check(saw_operator, "semantic tokens include trailing partial operator");
 }
 
+void language_info_tests() {
+  std::vector<CompletionItem> after_context =
+      completions("simplify(x) @", std::string("simplify(x) @").size());
+  bool found_assume = false;
+  for (const auto& item : after_context) {
+    found_assume = found_assume || item.label == "assume";
+  }
+  check(found_assume, "completions include context attributes after @");
+
+  std::vector<CompletionItem> in_brackets =
+      completions("v[", std::string("v[").size());
+  bool found_end = false;
+  for (const auto& item : in_brackets) {
+    found_end = found_end || item.label == "end";
+  }
+  check(found_end, "completions include end inside brackets");
+
+  Arena arena;
+  HoverInfo h = hover(arena, "sum[i : 1..n](i^2)", 5);
+  check_eq(h.core, "(sum (binder i (range 1 n)) (^ i 2))",
+           "hover exposes core projection");
+  check_eq(h.sympy_coverage.kernel, "sympy",
+           "hover includes sympy coverage");
+
+  SignatureHelp sig = signature_help("point(1, 2)", 8);
+  check_eq(sig.head, "point", "signature help finds call head");
+  check_eq(std::to_string(sig.active_parameter), "1",
+           "signature help finds active parameter");
+  check_eq(sig.parameters[0], "x", "signature help returns parameters");
+
+  SignatureHelp binder = signature_help("sum[i : 1..n](i)", 6);
+  check_eq(binder.head, "sum", "signature help finds binder head");
+  check_eq(binder.parameters[0], "var", "signature help handles binders");
+}
+
 void minimal_do_blocks() {
   Arena arena;
   Ref block = read_surface(
@@ -1300,6 +1335,7 @@ int main() {
   validator_warnings();
   layout_lexer_tests();
   semantic_token_tests();
+  language_info_tests();
   minimal_do_blocks();
   loop_and_branch_blocks();
   graphics_syntax_round_trips();

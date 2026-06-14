@@ -49,7 +49,9 @@ facet [read=MODE] [emit=MODE] [compare=EXPR] [by=MODE] < input
 
 Compatibility read alias: `sympy-srepr`.
 
-**Emit modes:** `surface`, `strict`, `core`, `object`, `latex`, `semantic-tokens`, `render:svg`, `render:pdf`, `render:png`, `render:html`, `coverage:K`, `source:K`, `source:sympy-srepr`, `source:sympy-core`
+**Emit modes:** `surface`, `strict`, `core`, `object`, `latex`, `semantic-tokens`, `completions:N`, `hover:N`, `signature:N`, `diagnostics`, `render:svg`, `render:pdf`, `render:png`, `render:html`, `coverage:K`, `source:K`, `source:sympy-srepr`, `source:sympy-core`
+
+Language-server mode: `facet --lsp` speaks stdio JSON-RPC for semantic tokens, completions, hover, signature help, and diagnostics.
 
 Compatibility aliases remain for one release: `sympy`, `sympy-srepr`, and `sympy-core`.
 

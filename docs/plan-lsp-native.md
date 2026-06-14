@@ -8,7 +8,7 @@
 
 The surface lexer already classifies every character; we expose that classification as **LSP-compatible semantic tokens**.
 
-**Implementation status:** P1 is implemented. The public API is `semantic_tokens(surface_input)` and the CLI mode is `emit=semantic-tokens`. Tokens include byte `offset`, byte `length`, `type`, and string `modifiers`. This first pass is lexer/context driven, so it also works on partial or currently unparseable input.
+**Implementation status:** P1-P5 are implemented in the native binary. Public APIs now cover semantic tokens, completions, hover, and signature help; CLI modes expose each provider; `facet --lsp` wraps them in stdio JSON-RPC with initialize, document cache, semantic tokens, completion, hover, signature help, and diagnostics. P6's true incremental re-lex remains an optimization; the server currently recomputes token data from the cached document text.
 
 ### 1.1 Token type taxonomy
 
@@ -247,3 +247,5 @@ Recommendation: **Option A** for the hover/semantic-token features; defer Option
 | **P6** | Incremental re-lex | delta sync, range semantic tokens |
 
 P1 alone unlocks TextMate-beating semantic highlighting in VS Code without a notebook-aware LSP. P1–P4 can ship as CLI modes; P5 wraps them in a JSON-RPC loop.
+
+Implementation note: `textDocument/semanticTokens/range` is supported by recomputing the cached document token stream and returning the encoded data; true incremental re-lex can replace this later without changing the public API.

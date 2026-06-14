@@ -42,6 +42,20 @@ struct SemanticToken {
   std::vector<std::string> modifiers;
 };
 
+struct CompletionItem {
+  std::string label;
+  std::string kind;
+  std::string detail;
+  std::string documentation;
+};
+
+struct SignatureHelp {
+  std::string head;
+  std::vector<std::string> parameters;
+  int active_parameter = 0;
+  std::string documentation;
+};
+
 struct Unmapped {
   std::string head;
   std::string kernel;
@@ -53,6 +67,14 @@ struct Coverage {
   int supported = 0;
   int total = 0;
   std::vector<Unmapped> missing;
+};
+
+struct HoverInfo {
+  std::string surface;
+  std::string strict;
+  std::string core;
+  std::string latex;
+  Coverage sympy_coverage;
 };
 
 struct Ok {
@@ -132,6 +154,12 @@ CompareResult compare(Arena& arena, Ref lhs, Ref rhs, const std::string& by);
 
 std::vector<Diagnostic> validate(Ref ref);
 std::vector<SemanticToken> semantic_tokens(const std::string& surface_input);
+std::vector<CompletionItem> completions(const std::string& surface_input,
+                                        std::size_t cursor_offset);
+HoverInfo hover(Arena& arena, const std::string& surface_input,
+                std::size_t cursor_offset);
+SignatureHelp signature_help(const std::string& surface_input,
+                             std::size_t cursor_offset);
 std::string render_svg(Ref ref);
 std::string render_pdf(Ref ref);
 std::string render_png(Ref ref);

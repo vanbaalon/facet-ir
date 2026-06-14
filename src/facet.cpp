@@ -1,5 +1,6 @@
 #include "facet_internal.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cmath>
@@ -2118,6 +2119,199 @@ std::vector<SemanticToken> semantic_tokens(const std::string& surface_input) {
                    std::move(modifiers)});
   }
   return out;
+}
+
+void add_completion(std::vector<CompletionItem>& out, std::string label,
+                    std::string kind, std::string detail,
+                    std::string documentation) {
+  for (const auto& item : out) {
+    if (item.label == label) {
+      return;
+    }
+  }
+  out.push_back({std::move(label), std::move(kind), std::move(detail),
+                 std::move(documentation)});
+}
+
+std::size_t clamp_offset(const std::string& input, std::size_t offset) {
+  return offset > input.size() ? input.size() : offset;
+}
+
+std::string prefix_before(const std::string& input, std::size_t offset) {
+  return input.substr(0, clamp_offset(input, offset));
+}
+
+char last_nonspace(const std::string& text) {
+  for (std::size_t i = text.size(); i > 0; --i) {
+    char c = text[i - 1];
+    if (!std::isspace(static_cast<unsigned char>(c))) {
+      return c;
+    }
+  }
+  return '\0';
+}
+
+bool contains_unclosed(const std::string& text, char open, char close) {
+  int depth = 0;
+  for (char c : text) {
+    if (c == open) {
+      ++depth;
+    } else if (c == close && depth > 0) {
+      --depth;
+    }
+  }
+  return depth > 0;
+}
+
+std::vector<CompletionItem> completions(const std::string& surface_input,
+                                        std::size_t cursor_offset) {
+  std::string prefix = prefix_before(surface_input, cursor_offset);
+  char last = last_nonspace(prefix);
+  bool after_context = last == '@';
+  bool in_brackets = contains_unclosed(prefix, '[', ']');
+  std::vector<CompletionItem> out;
+
+  if (after_context) {
+    add_completion(out, "assume", "Keyword", "assume(condition)",
+                   "Attach assumptions for kernel evaluation.");
+    add_completion(out, "via", "Keyword", "via(kernel)",
+                   "Select an external kernel.");
+    add_completion(out, "style", "Property", "style(key=value, ...)",
+                   "Attach rendering style metadata.");
+    add_completion(out, "render", "Property", "render(format=...)",
+                   "Attach rendering metadata.");
+    return out;
+  }
+
+  if (in_brackets) {
+    add_completion(out, "all", "Constant", "all",
+                   "Whole-axis selector inside indexing brackets.");
+    add_completion(out, "end", "Constant", "end",
+                   "Axis-aware final index inside indexing brackets.");
+    add_completion(out, "step", "Property", "step=k",
+                   "Stride for a bracket-local range.");
+  }
+
+  static const std::vector<std::string> binder_heads = {
+      "sum",       "prod",   "int",       "lim",      "forall",
+      "exists",    "diff",   "plot",      "plot3d",   "parametric",
+      "contour",   "field",  "complexplot","manipulate","setbuild",
+      "seq",       "fold",   "scan"};
+  for (const auto& head : binder_heads) {
+    add_completion(out, head, "Function", head + "[i : domain](body)",
+                   "Built-in Facet binder head.");
+  }
+
+  static const std::vector<std::string> functions = {
+      "sin", "cos", "tan", "log", "exp", "sqrt", "det", "tr",
+      "simplify", "expand"};
+  for (const auto& fn : functions) {
+    add_completion(out, fn, "Function", fn + "(expr)",
+                   "Known non-indexed function.");
+  }
+
+  for (const std::string& constant : {"pi", "e", "inf"}) {
+    add_completion(out, constant, "Constant", constant,
+                   "Special mathematical constant.");
+  }
+
+  if (last && last != '(' && last != '[' && last != '{' && last != ',' &&
+      last != ':' && last != '@') {
+    for (const std::string& op : {"+", "-", "*", "/", "^", "..", "@", "|->",
+                                  "~>", "=", ">=", "<=", "!="}) {
+      add_completion(out, op, "Operator", op, "Facet surface operator.");
+    }
+  }
+  return out;
+}
+
+HoverInfo hover(Arena& arena, const std::string& surface_input,
+                std::size_t cursor_offset) {
+  (void)cursor_offset;
+  Ref ref = read_surface(arena, surface_input);
+  return {print_surface(ref), print_strict(ref), print_core(ref),
+          print_latex(ref), coverage(ref, "sympy")};
+}
+
+std::string word_before_open(const std::string& text, std::size_t open) {
+  std::size_t end = open;
+  while (end > 0 && std::isspace(static_cast<unsigned char>(text[end - 1]))) {
+    --end;
+  }
+  std::size_t start = end;
+  while (start > 0) {
+    char c = text[start - 1];
+    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' &&
+        c != '\\') {
+      break;
+    }
+    --start;
+  }
+  return text.substr(start, end - start);
+}
+
+std::vector<std::string> signature_parameters(const std::string& head,
+                                              char opener) {
+  if (opener == '[') {
+    if (is_binder_head(head)) {
+      return {"var", "domain", "body"};
+    }
+    return {"index"};
+  }
+  static const std::unordered_map<std::string, std::vector<std::string>> table = {
+      {"range", {"start", "stop"}},
+      {"point", {"x", "y"}},
+      {"segment", {"from", "to"}},
+      {"circle", {"center", "radius"}},
+      {"text", {"point", "label"}},
+      {"sin", {"arg"}},
+      {"cos", {"arg"}},
+      {"sqrt", {"arg"}},
+      {"style", {"key=value"}},
+      {"render", {"format", "size", "dpi"}},
+  };
+  auto it = table.find(head);
+  if (it != table.end()) {
+    return it->second;
+  }
+  return {"arg0", "arg1"};
+}
+
+SignatureHelp signature_help(const std::string& surface_input,
+                             std::size_t cursor_offset) {
+  std::size_t offset = clamp_offset(surface_input, cursor_offset);
+  int depth_paren = 0;
+  int depth_bracket = 0;
+  for (std::size_t i = offset; i > 0; --i) {
+    char c = surface_input[i - 1];
+    if (c == ')') {
+      ++depth_paren;
+    } else if (c == ']') {
+      ++depth_bracket;
+    } else if (c == '(') {
+      if (depth_paren == 0) {
+        std::string head = word_before_open(surface_input, i - 1);
+        std::string inside = surface_input.substr(i, offset - i);
+        int active = static_cast<int>(
+            std::count(inside.begin(), inside.end(), ','));
+        return {head, signature_parameters(head, '('), active,
+                "Facet call signature for " + head};
+      }
+      --depth_paren;
+    } else if (c == '[') {
+      if (depth_bracket == 0) {
+        std::string head = word_before_open(surface_input, i - 1);
+        std::string inside = surface_input.substr(i, offset - i);
+        int active = static_cast<int>(
+            std::count(inside.begin(), inside.end(), ','));
+        return {head, signature_parameters(head, '['), active,
+                is_binder_head(head) ? "Facet binder signature"
+                                     : "Facet access signature"};
+      }
+      --depth_bracket;
+    }
+  }
+  return {"", {}, 0, ""};
 }
 
 std::string render_svg(Ref ref) {
