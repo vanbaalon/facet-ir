@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -12,6 +13,7 @@
 namespace facet {
 namespace {
 
+using internal::attr_value;
 using internal::escape;
 using internal::join;
 
@@ -567,6 +569,83 @@ Ref from_srepr(Arena& arena, const Srepr& value) {
   throw Error("SymPy srepr reader does not support head: " + value.head);
 }
 
+// Map symbol name → SymPy assumption property names (e.g. "nonnegative").
+using AssumeMap = std::map<std::string, std::vector<std::string>>;
+
+// Walk a Facet assumption expression (e.g. (>= x 0)) and populate out.
+void collect_assumptions(Ref cond, AssumeMap& out) {
+  auto one = [&](Ref c) {
+    if (c->tag != Tag::Compound || c->args.size() != 2) { return; }
+    const std::string& op = c->text;
+    Ref lhs = c->args[0];
+    Ref rhs = c->args[1];
+    bool lsym = lhs->tag == Tag::Sym;
+    bool rsym = rhs->tag == Tag::Sym;
+    bool rzero = rhs->tag == Tag::Int && rhs->text == "0";
+    bool lzero = lhs->tag == Tag::Int && lhs->text == "0";
+    auto add = [&](const std::string& sym, const char* prop) {
+      out[sym].push_back(prop);
+    };
+    if (lsym && rzero) {
+      if (op == ">=")      add(lhs->text, "nonnegative");
+      else if (op == ">")  add(lhs->text, "positive");
+      else if (op == "<=") add(lhs->text, "nonpositive");
+      else if (op == "<")  add(lhs->text, "negative");
+    } else if (rsym && lzero) {
+      if (op == "<=")      add(rhs->text, "nonnegative");
+      else if (op == "<")  add(rhs->text, "positive");
+      else if (op == ">=") add(rhs->text, "nonpositive");
+      else if (op == ">")  add(rhs->text, "negative");
+    }
+  };
+  if (cond->tag == Tag::Compound && cond->text == "and") {
+    for (Ref arg : cond->args) { one(arg); }
+  } else {
+    one(cond);
+  }
+}
+
+// Build Python code that evaluates `source` as a SymPy expression and
+// prints its srepr. `assumptions` maps symbol names to SymPy property names.
+std::string build_eval_code(const std::string& source, const AssumeMap& assumptions) {
+  // Build assume_map Python dict literal
+  std::string assume_lit = "{";
+  bool first_sym = true;
+  for (const auto& [name, props] : assumptions) {
+    if (!first_sym) { assume_lit += ", "; }
+    first_sym = false;
+    assume_lit += python_string(name) + ": {";
+    for (std::size_t i = 0; i < props.size(); ++i) {
+      if (i) { assume_lit += ", "; }
+      assume_lit += python_string(props[i]) + ": True";
+    }
+    assume_lit += "}";
+  }
+  assume_lit += "}";
+
+  return
+    "import re\n"
+    "import sympy as s\n"
+    "src = " + python_string(source) + "\n"
+    "assume_map = " + assume_lit + "\n"
+    "names = set(re.findall(r'\\b[A-Za-z_]\\w*\\b', src))\n"
+    "known = {\n"
+    "  'Integral': s.Integral, 'Sum': s.Sum, 'Product': s.Product,\n"
+    "  'Limit': s.Limit, 'Lambda': s.Lambda, 'diff': s.diff,\n"
+    "  'sin': s.sin, 'cos': s.cos, 'tan': s.tan, 'log': s.log,\n"
+    "  'sqrt': s.sqrt, 'simplify': s.simplify, 'expand': s.expand,\n"
+    "  'Eq': s.Eq, 'Ne': s.Ne, 'Gt': s.Gt, 'Ge': s.Ge,\n"
+    "  'Lt': s.Lt, 'Le': s.Le, 'pi': s.pi\n"
+    "}\n"
+    "env = dict(known)\n"
+    "for name in names:\n"
+    "  if name not in env:\n"
+    "    kwargs = {k: v for d in [assume_map.get(name, {})] for k, v in d.items()}\n"
+    "    env[name] = s.Symbol(name, **kwargs)\n"
+    "expr = eval(src, {'__builtins__': {}}, env)\n"
+    "print(s.srepr(expr))\n";
+}
+
 } // namespace
 
 Ref read_sympy_srepr(Arena& arena, const std::string& input) {
@@ -574,31 +653,23 @@ Ref read_sympy_srepr(Arena& arena, const std::string& input) {
 }
 
 std::string print_sympy_srepr(Ref ref) {
-  std::string source = print_sympy(ref);
-  std::string code =
-      "import re\n"
-      "import sympy as s\n"
-      "src = " + python_string(source) + "\n"
-      "names = set(re.findall(r'\\b[A-Za-z_]\\w*\\b', src))\n"
-      "known = {\n"
-      "  'Integral': s.Integral, 'Sum': s.Sum, 'Product': s.Product,\n"
-      "  'Limit': s.Limit, 'Lambda': s.Lambda, 'diff': s.diff,\n"
-      "  'sin': s.sin, 'cos': s.cos, 'tan': s.tan, 'log': s.log,\n"
-      "  'sqrt': s.sqrt, 'simplify': s.simplify, 'expand': s.expand,\n"
-      "  'Eq': s.Eq, 'Ne': s.Ne, 'Gt': s.Gt, 'Ge': s.Ge,\n"
-      "  'Lt': s.Lt, 'Le': s.Le, 'pi': s.pi\n"
-      "}\n"
-      "env = dict(known)\n"
-      "for name in names:\n"
-      "  if name not in env:\n"
-      "    env[name] = s.Symbol(name)\n"
-      "expr = eval(src, {'__builtins__': {}}, env)\n"
-      "print(s.srepr(expr))\n";
-  return run_command(shell_quote(sympy_python()) + " -c " + shell_quote(code) +
-                     " 2>&1");
+  return run_command(shell_quote(sympy_python()) + " -c " +
+                     shell_quote(build_eval_code(print_sympy(ref), {})) + " 2>&1");
 }
 
 Ref evaluate_sympy(Arena& arena, Ref ref) {
+  // @via(sympy) signals that the expression should be evaluated, not just
+  // represented. Strip context attrs, carry @assume into Symbol() kwargs.
+  Ref via = attr_value(ref, "via");
+  if (via && via->tag == Tag::Sym && via->text == "sympy") {
+    Ref inner = arena.compound(ref->text, ref->args);
+    AssumeMap assumptions;
+    Ref assume = attr_value(ref, "assume");
+    if (assume) { collect_assumptions(assume, assumptions); }
+    std::string code = build_eval_code(print_sympy(inner), assumptions);
+    return read_sympy_srepr(arena, run_command(
+        shell_quote(sympy_python()) + " -c " + shell_quote(code) + " 2>&1"));
+  }
   return read_sympy_srepr(arena, print_sympy_srepr(ref));
 }
 
