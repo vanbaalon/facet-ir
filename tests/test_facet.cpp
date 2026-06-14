@@ -772,6 +772,53 @@ void minimal_do_blocks() {
       "trailing input", "strict rejects layout do block");
 }
 
+void loop_and_branch_blocks() {
+  Arena arena;
+  Ref loop = read_surface(
+      arena,
+      "do:\n"
+      "    while abs(f(x)) > eps:\n"
+      "        x <- x - f(x) / df(x)\n"
+      "    return x\n");
+  check_eq(print_core(loop),
+           "(do (while (> (abs (f x)) eps) (do (assign x (- x (/ (f x) "
+           "(df x)))))) (return x))",
+           "surface while block lowers to while with do body");
+
+  Ref for_block = read_surface(
+      arena,
+      "do:\n"
+      "    for i in 1..n:\n"
+      "        yield i^2\n"
+      "    return n\n");
+  check_eq(print_core(for_block),
+           "(do (for (binder i (range 1 n)) (do (yield (^ i 2)))) "
+           "(return n))",
+           "surface for block lowers to binder plus do body");
+
+  Ref conditional = read_surface(
+      arena,
+      "do:\n"
+      "    if x > 0:\n"
+      "        return x\n"
+      "    else:\n"
+      "        return -x\n");
+  check_eq(print_core(conditional),
+           "(do (if (> x 0) (do (return x)) (do (return (neg x)))))",
+           "surface if/else block lowers to if with do branches");
+
+  Ref control = read_surface(
+      arena,
+      "do:\n"
+      "    while ready:\n"
+      "        continue\n"
+      "        break\n"
+      "    return ready\n");
+  check_eq(print_core(control),
+           "(do (while ready (do (continue) (break))) (return ready))",
+           "surface break and continue lower to nullary statements");
+}
+
 void new_feature_regressions() {
   Arena arena;
 
@@ -854,6 +901,7 @@ int main() {
   validator_warnings();
   layout_lexer_tests();
   minimal_do_blocks();
+  loop_and_branch_blocks();
   new_feature_regressions();
 
   if (failures) {

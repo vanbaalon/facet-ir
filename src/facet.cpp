@@ -637,6 +637,35 @@ private:
   }
 
   Ref statement() {
+    if (at("while")) {
+      expect("while");
+      Ref condition = expression_until(":");
+      Ref body = block();
+      return arena_.compound("while", {condition, body});
+    }
+    if (at("for")) {
+      expect("for");
+      std::string name = expect();
+      expect("in");
+      Ref domain = expression_until(":");
+      Ref body = block();
+      return arena_.compound(
+          "for", {arena_.compound("binder",
+                                   {surface_atom_from_token(arena_, name),
+                                    domain}),
+                  body});
+    }
+    if (at("if")) {
+      expect("if");
+      Ref condition = expression_until(":");
+      Ref then_branch = block();
+      Ref else_branch = arena_.compound("do");
+      if (at("else")) {
+        expect("else");
+        else_branch = block();
+      }
+      return arena_.compound("if", {condition, then_branch, else_branch});
+    }
     if (at("let") || at("mut")) {
       std::string head = expect();
       std::string name = expect();
@@ -651,6 +680,17 @@ private:
       expect("NEWLINE");
       return arena_.compound("return", {value});
     }
+    if (at("yield")) {
+      expect("yield");
+      Ref value = expression_until_newline();
+      expect("NEWLINE");
+      return arena_.compound("yield", {value});
+    }
+    if (at("break") || at("continue")) {
+      std::string head = expect();
+      expect("NEWLINE");
+      return arena_.compound(head);
+    }
 
     std::string name = expect();
     if (at("=")) {
@@ -662,9 +702,25 @@ private:
     return arena_.compound("assign", {surface_atom_from_token(arena_, name), value});
   }
 
+  Ref block() {
+    expect(":");
+    expect("NEWLINE");
+    expect("INDENT");
+    std::vector<Ref> stmts;
+    while (!at("DEDENT")) {
+      stmts.push_back(statement());
+    }
+    expect("DEDENT");
+    return arena_.compound("do", stmts);
+  }
+
   Ref expression_until_newline() {
+    return expression_until("NEWLINE");
+  }
+
+  Ref expression_until(const std::string& delimiter) {
     std::vector<std::string> parts;
-    while (pos_ < toks_.size() && !at("NEWLINE")) {
+    while (pos_ < toks_.size() && !at(delimiter)) {
       if (at("INDENT") || at("DEDENT")) {
         throw Error("expected expression before " + toks_[pos_].text +
                     " at " + location());
