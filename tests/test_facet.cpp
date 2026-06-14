@@ -852,6 +852,43 @@ void layout_lexer_tests() {
       "tabs are not allowed", "layout lexer rejects tabs in indentation");
 }
 
+void semantic_token_tests() {
+  std::vector<SemanticToken> toks = semantic_tokens("sum[i : 1..n](f(x))");
+  check_eq(std::to_string(toks.size()), "14",
+           "semantic tokens include operators and punctuation");
+  if (toks.size() >= 12) {
+    check_eq(toks[0].type, "binder_head",
+             "semantic tokens classify binder head");
+    check_eq(std::to_string(toks[0].offset), "0",
+             "semantic tokens record binder offset");
+    check_eq(toks[2].type, "binder_var",
+             "semantic tokens classify binder variable");
+    check(!toks[2].modifiers.empty() &&
+              toks[2].modifiers[0] == "declaration",
+          "semantic tokens mark binder declaration");
+    check_eq(toks[4].type, "number", "semantic tokens classify number");
+    check_eq(toks[5].type, "operator", "semantic tokens classify range op");
+    check_eq(toks[9].type, "function_call",
+             "semantic tokens classify function call head");
+    check_eq(toks[11].type, "free_var",
+             "semantic tokens classify function argument");
+  }
+
+  std::vector<SemanticToken> partial = semantic_tokens("do:\n    return x +");
+  bool saw_return = false;
+  bool saw_operator = false;
+  for (const auto& tok : partial) {
+    if (tok.type == "keyword" && tok.offset == 8) {
+      saw_return = true;
+    }
+    if (tok.type == "operator" && tok.offset == 17) {
+      saw_operator = true;
+    }
+  }
+  check(saw_return, "semantic tokens work on partial layout input");
+  check(saw_operator, "semantic tokens include trailing partial operator");
+}
+
 void minimal_do_blocks() {
   Arena arena;
   Ref block = read_surface(
@@ -1262,6 +1299,7 @@ int main() {
   diagnostics_include_locations();
   validator_warnings();
   layout_lexer_tests();
+  semantic_token_tests();
   minimal_do_blocks();
   loop_and_branch_blocks();
   graphics_syntax_round_trips();

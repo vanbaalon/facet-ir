@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -18,7 +19,10 @@ using internal::attr_value;
 using internal::atom_from_token;
 using internal::escape;
 using internal::is_binder_head;
+using internal::is_int_token;
 using internal::is_known_nonindexed_function;
+using internal::is_real_token;
+using internal::is_string_token;
 using internal::join;
 using internal::lookup_op;
 using internal::prec_of;
@@ -235,6 +239,85 @@ std::vector<internal::Tok> lex_surface_tokens(std::string input) {
   }
   toks.push_back(lex.peek());
   return toks;
+}
+
+bool is_identifier_token(const std::string& text) {
+  if (text.empty()) {
+    return false;
+  }
+  unsigned char first = static_cast<unsigned char>(text.front());
+  return std::isalpha(first) || text.front() == '_' || text.front() == '?' ||
+         text.front() == '\\';
+}
+
+bool token_in(const std::string& text,
+              const std::unordered_set<std::string>& set) {
+  return set.find(text) != set.end();
+}
+
+std::string semantic_type_for_token(const std::vector<internal::Tok>& toks,
+                                    std::size_t index,
+                                    std::vector<std::string>& modifiers) {
+  static const std::unordered_set<std::string> keywords = {
+      "do",  "let",   "mut",   "return", "yield",
+      "for", "while", "if",    "else",   "break",
+      "continue", "in"};
+  static const std::unordered_set<std::string> meta_keywords = {
+      "goal", "rule", "when", "via", "assume", "need"};
+  static const std::unordered_set<std::string> special_constants = {
+      "pi", "e", "i", "inf", "end", "all"};
+  static const std::unordered_set<std::string> punctuation = {
+      "(", ")", "[", "]", "{", "}", ",", ":"};
+  static const std::unordered_set<std::string> operators = {
+      "+",   "-",  "*",  "/",  "^",  "=",  "===", "!=", ">",
+      "<",   ">=", "<=", "~",  "~>", "~=", "=>",  "|->", "|>",
+      "->",  "<-", "..", "@",  ":=", ".("};
+
+  const std::string& text = toks[index].text;
+  if (token_in(text, punctuation)) {
+    return "punctuation";
+  }
+  if (token_in(text, operators) || lookup_op(text)) {
+    return "operator";
+  }
+  if (is_int_token(text) || is_real_token(text)) {
+    return "number";
+  }
+  if (is_string_token(text)) {
+    return "string";
+  }
+  if (token_in(text, keywords)) {
+    return "keyword";
+  }
+  if (token_in(text, meta_keywords)) {
+    return "meta_keyword";
+  }
+  if (is_identifier_token(text)) {
+    bool before_binder_separator =
+        index + 1 < toks.size() &&
+        (toks[index + 1].text == ":" || toks[index + 1].text == "->");
+    bool after_open_bracket =
+        index > 0 && toks[index - 1].text == "[";
+    if (after_open_bracket && before_binder_separator) {
+      modifiers.push_back("declaration");
+      return "binder_var";
+    }
+    if (token_in(text, special_constants)) {
+      return "special_constant";
+    }
+    bool before_apply =
+        index + 1 < toks.size() &&
+        (toks[index + 1].text == "(" || toks[index + 1].text == ".(");
+    bool before_binder = index + 1 < toks.size() && toks[index + 1].text == "[";
+    if (before_binder && is_binder_head(text)) {
+      return "binder_head";
+    }
+    if (before_apply) {
+      return "function_call";
+    }
+    return "free_var";
+  }
+  return "operator";
 }
 
 class TokenCursor {
@@ -801,13 +884,14 @@ private:
                     " at " + location());
       }
       const auto& tok = toks_[pos_++];
-      parts.push_back({tok.text, false, tok.line, tok.column});
+      parts.push_back({tok.text, false, tok.offset, tok.line, tok.column});
     }
     if (parts.empty()) {
       throw Error("expected expression at " + location());
     }
     const auto& eof = parts.back();
-    parts.push_back({"", true, eof.line, eof.column + eof.text.size()});
+    parts.push_back({"", true, eof.offset + eof.text.size(), eof.line,
+                     eof.column + eof.text.size()});
     return SurfaceParser(arena_, std::move(parts)).parse();
   }
 };
@@ -2018,6 +2102,21 @@ std::string print_latex(Ref ref) { return print_latex_inner(ref); }
 std::vector<Diagnostic> validate(Ref ref) {
   std::vector<Diagnostic> out;
   validate_walk(ref, out);
+  return out;
+}
+
+std::vector<SemanticToken> semantic_tokens(const std::string& surface_input) {
+  std::vector<internal::Tok> toks = lex_surface_tokens(surface_input);
+  std::vector<SemanticToken> out;
+  for (std::size_t i = 0; i < toks.size(); ++i) {
+    if (toks[i].eof) {
+      continue;
+    }
+    std::vector<std::string> modifiers;
+    std::string type = semantic_type_for_token(toks, i, modifiers);
+    out.push_back({toks[i].offset, toks[i].text.size(), std::move(type),
+                   std::move(modifiers)});
+  }
   return out;
 }
 

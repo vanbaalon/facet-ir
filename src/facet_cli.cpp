@@ -4,6 +4,7 @@
 #include <iterator>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -17,8 +18,58 @@ std::string option_value(const std::string& arg, const std::string& key) {
 
 void usage() {
   std::cerr << "usage: facet read=<surface|strict|core|object|sympy-srepr> "
-               "emit=<surface|strict|core|object|latex|render:svg|render:pdf|render:png|render:html|coverage:K|source:K|source:sympy-srepr|source:sympy-core|sympy|sympy-srepr|sympy-core> "
+               "emit=<surface|strict|core|object|latex|semantic-tokens|render:svg|render:pdf|render:png|render:html|coverage:K|source:K|source:sympy-srepr|source:sympy-core|sympy|sympy-srepr|sympy-core> "
                "[compare=EXPR] [by=<structural|simplify|numeric|numeric(samples=N,tol=E)>] < input\n";
+}
+
+std::string json_escape(const std::string& text) {
+  std::string out;
+  for (char c : text) {
+    switch (c) {
+    case '\\':
+      out += "\\\\";
+      break;
+    case '"':
+      out += "\\\"";
+      break;
+    case '\n':
+      out += "\\n";
+      break;
+    case '\r':
+      out += "\\r";
+      break;
+    case '\t':
+      out += "\\t";
+      break;
+    default:
+      out.push_back(c);
+      break;
+    }
+  }
+  return out;
+}
+
+std::string format_semantic_tokens(
+    const std::vector<facet::SemanticToken>& tokens) {
+  std::ostringstream out;
+  out << "[";
+  for (std::size_t i = 0; i < tokens.size(); ++i) {
+    const auto& token = tokens[i];
+    if (i) {
+      out << ",";
+    }
+    out << "{\"offset\":" << token.offset << ",\"length\":" << token.length
+        << ",\"type\":\"" << json_escape(token.type) << "\",\"modifiers\":[";
+    for (std::size_t j = 0; j < token.modifiers.size(); ++j) {
+      if (j) {
+        out << ",";
+      }
+      out << "\"" << json_escape(token.modifiers[j]) << "\"";
+    }
+    out << "]}";
+  }
+  out << "]";
+  return out.str();
 }
 
 std::string format_coverage(const facet::Coverage& coverage) {
@@ -73,6 +124,12 @@ int main(int argc, char** argv) {
                     std::istreambuf_iterator<char>());
 
   try {
+    if (emit == "semantic-tokens") {
+      std::cout << format_semantic_tokens(facet::semantic_tokens(input))
+                << "\n";
+      return 0;
+    }
+
     facet::Arena arena;
     facet::Ref expr = nullptr;
     if (read == "surface") {

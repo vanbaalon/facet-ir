@@ -58,10 +58,11 @@ void Lexer::next() {
          std::isspace(static_cast<unsigned char>(input_[pos_]))) {
     advance();
   }
+  std::size_t token_offset = pos_;
   std::size_t token_line = line_;
   std::size_t token_column = column_;
   if (pos_ >= input_.size()) {
-    tok_ = {"", true, token_line, token_column};
+    tok_ = {"", true, token_offset, token_line, token_column};
     return;
   }
 
@@ -86,7 +87,7 @@ void Lexer::next() {
         advance();
       }
     }
-    tok_ = {input_.substr(start, pos_ - start), false, token_line,
+    tok_ = {input_.substr(start, pos_ - start), false, token_offset, token_line,
             token_column};
     return;
   }
@@ -107,7 +108,7 @@ void Lexer::next() {
         advance();
       }
     }
-    tok_ = {input_.substr(start, pos_ - start), false, token_line,
+    tok_ = {input_.substr(start, pos_ - start), false, token_offset, token_line,
             token_column};
     return;
   }
@@ -125,7 +126,7 @@ void Lexer::next() {
                   ", column " + std::to_string(token_column));
     }
     advance();
-    tok_ = {'"' + s + '"', false, token_line, token_column};
+    tok_ = {'"' + s + '"', false, token_offset, token_line, token_column};
     return;
   }
 
@@ -137,11 +138,12 @@ void Lexer::next() {
       for (std::size_t i = 0; i < op.size(); ++i) {
         advance();
       }
-      tok_ = {op, false, token_line, token_column};
+      tok_ = {op, false, token_offset, token_line, token_column};
       return;
     }
   }
-  tok_ = {std::string(1, advance()), false, token_line, token_column};
+  tok_ = {std::string(1, advance()), false, token_offset, token_line,
+          token_column};
 }
 
 namespace {
@@ -160,8 +162,8 @@ std::string_view rtrim(std::string_view line) {
 }
 
 void push_layout(std::vector<LayoutTok>& out, std::string text,
-                 std::size_t line, std::size_t column) {
-  out.push_back({std::move(text), line, column});
+                 std::size_t offset, std::size_t line, std::size_t column) {
+  out.push_back({std::move(text), offset, line, column});
 }
 
 } // namespace
@@ -205,7 +207,7 @@ std::vector<LayoutTok> lex_layout_for_test(const std::string& input) {
           throw Error("unexpected indent at " + location(line_no, indent + 1));
         }
         indents.push_back(indent);
-        push_layout(out, "INDENT", line_no, indent + 1);
+        push_layout(out, "INDENT", line_start + indent, line_no, indent + 1);
       } else {
         if (pending_block) {
           throw Error("expected indented block at " +
@@ -213,7 +215,8 @@ std::vector<LayoutTok> lex_layout_for_test(const std::string& input) {
         }
         while (indent < indents.back()) {
           indents.pop_back();
-          push_layout(out, "DEDENT", line_no, indent + 1);
+          push_layout(out, "DEDENT", line_start + indent, line_no,
+                      indent + 1);
         }
         if (indent != indents.back()) {
           throw Error("dedent does not match any outer indentation at " +
@@ -229,7 +232,8 @@ std::vector<LayoutTok> lex_layout_for_test(const std::string& input) {
     while (!lex.peek().eof) {
       Tok tok = lex.peek();
       last = tok.text;
-      push_layout(out, tok.text, line_no, indent + tok.column);
+      push_layout(out, tok.text, line_start + indent + tok.offset, line_no,
+                  indent + tok.column);
       if (tok.text == "(" || tok.text == "[" || tok.text == "{") {
         ++bracket_depth;
       } else if (tok.text == ")" || tok.text == "]" || tok.text == "}") {
@@ -240,7 +244,8 @@ std::vector<LayoutTok> lex_layout_for_test(const std::string& input) {
       lex.expect();
     }
     if (bracket_depth == 0) {
-      push_layout(out, "NEWLINE", line_no, raw.size() + 1);
+      push_layout(out, "NEWLINE", line_start + raw.size(), line_no,
+                  raw.size() + 1);
       pending_block = last == ":";
     }
     ++line_no;
@@ -251,7 +256,7 @@ std::vector<LayoutTok> lex_layout_for_test(const std::string& input) {
   }
   while (indents.size() > 1) {
     indents.pop_back();
-    push_layout(out, "DEDENT", line_no, 1);
+    push_layout(out, "DEDENT", input.size(), line_no, 1);
   }
   return out;
 }

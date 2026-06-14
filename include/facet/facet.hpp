@@ -31,6 +31,15 @@ struct Node {
 struct Diagnostic {
   std::string code;
   std::string message;
+  std::size_t source_offset = 0;
+  std::size_t source_length = 0;
+};
+
+struct SemanticToken {
+  std::size_t offset = 0;
+  std::size_t length = 0;
+  std::string type;
+  std::vector<std::string> modifiers;
 };
 
 struct Unmapped {
@@ -122,6 +131,7 @@ Coverage coverage(Ref ref, const std::string& kernel);
 CompareResult compare(Arena& arena, Ref lhs, Ref rhs, const std::string& by);
 
 std::vector<Diagnostic> validate(Ref ref);
+std::vector<SemanticToken> semantic_tokens(const std::string& surface_input);
 std::string render_svg(Ref ref);
 std::string render_pdf(Ref ref);
 std::string render_png(Ref ref);

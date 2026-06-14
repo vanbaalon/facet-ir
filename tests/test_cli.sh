@@ -25,6 +25,9 @@ expect "source:sympy-srepr read alias" \
 EXPECT='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><circle cx="200" cy="200" r="3" fill="black" /></svg>'
 expect "render svg CLI" 'scene{ point(0, 0) }' emit=render:svg
 
+EXPECT='[{"offset":0,"length":3,"type":"binder_head","modifiers":[]},{"offset":3,"length":1,"type":"punctuation","modifiers":[]},{"offset":4,"length":1,"type":"binder_var","modifiers":["declaration"]},{"offset":6,"length":1,"type":"punctuation","modifiers":[]},{"offset":8,"length":1,"type":"number","modifiers":[]},{"offset":9,"length":2,"type":"operator","modifiers":[]},{"offset":11,"length":1,"type":"free_var","modifiers":[]},{"offset":12,"length":1,"type":"punctuation","modifiers":[]},{"offset":13,"length":1,"type":"punctuation","modifiers":[]},{"offset":14,"length":1,"type":"function_call","modifiers":[]},{"offset":15,"length":1,"type":"punctuation","modifiers":[]},{"offset":16,"length":1,"type":"free_var","modifiers":[]},{"offset":17,"length":1,"type":"punctuation","modifiers":[]},{"offset":18,"length":1,"type":"punctuation","modifiers":[]}]'
+expect "semantic tokens CLI" 'sum[i : 1..n](f(x))' emit=semantic-tokens
+
 EXPECT='math.sin(x)**2+math.sqrt(y)'
 expect "source python CLI" 'sin(x)^2 + sqrt(y)' emit=source:python
 
