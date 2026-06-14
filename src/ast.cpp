@@ -52,8 +52,10 @@ bool decimal_digits(const std::string& s) {
 }
 
 bool all_zeroes(const std::string& s) {
-  return !s.empty() &&
-         std::all_of(s.begin(), s.end(), [](char c) { return c == '0'; });
+  std::size_t start = (!s.empty() && s.front() == '-') ? 1 : 0;
+  return start < s.size() &&
+         std::all_of(s.begin() + static_cast<std::ptrdiff_t>(start), s.end(),
+                     [](char c) { return c == '0'; });
 }
 
 } // namespace
@@ -75,9 +77,11 @@ Ref Arena::integer(std::string value) {
 }
 
 Ref Arena::rational(std::string numerator, std::string denominator) {
-  if (!decimal_digits(numerator) || !decimal_digits(denominator) ||
-      all_zeroes(denominator)) {
-    throw Error("invalid rational denominator");
+  if (!decimal_digits(numerator)) {
+    throw Error("invalid rational numerator: " + numerator);
+  }
+  if (!decimal_digits(denominator) || all_zeroes(denominator)) {
+    throw Error("invalid rational denominator: " + denominator);
   }
   Node node;
   node.tag = Tag::Rat;

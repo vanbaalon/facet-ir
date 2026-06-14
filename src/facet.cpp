@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -309,6 +310,21 @@ private:
                              {arena_.sym(t), arena_.compound("args", args)});
     }
     if (lex_.take("[")) {
+      if (t == "diff") {
+        std::vector<Ref> vars;
+        if (!lex_.take("]")) {
+          do {
+            vars.push_back(surface_atom_from_token(arena_, lex_.expect()));
+          } while (lex_.take(","));
+          lex_.expect("]");
+        }
+        lex_.expect("(");
+        Ref body = expr(0);
+        lex_.expect(")");
+        std::vector<Ref> args{body};
+        args.insert(args.end(), vars.begin(), vars.end());
+        return arena_.compound("diff", args);
+      }
       if (lex_.at("]")) {
         throw Error("empty binder at line " + std::to_string(lex_.peek().line) +
                     ", column " + std::to_string(lex_.peek().column));
@@ -547,6 +563,28 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
     return print_surface_prec(ref->args[0], 80) + "_" +
            print_surface_prec(ref->args[1]->args[0], 80);
   }
+  if (ref->text == "idx" && ref->args.size() > 1) {
+    std::string out = print_surface_prec(ref->args[0], 80);
+    for (std::size_t i = 1; i < ref->args.size(); ++i) {
+      Ref index = ref->args[i];
+      if (index->tag == Tag::Compound && index->args.size() == 1 &&
+          (index->text == "up" || index->text == "down")) {
+        out += index->text == "up" ? "^" : "_";
+        out += print_surface_prec(index->args[0], 80);
+      } else {
+        out += "_{" + print_surface_prec(index, 0) + "}";
+      }
+    }
+    return out;
+  }
+  if (ref->text == "diff" && ref->args.size() >= 2) {
+    std::vector<std::string> vars;
+    for (std::size_t i = 1; i < ref->args.size(); ++i) {
+      vars.push_back(print_surface_prec(ref->args[i], 0));
+    }
+    return "diff[" + join(vars, ", ") + "](" +
+           print_surface_prec(ref->args[0], 0) + ")";
+  }
   if (ref->text == "meta" && ref->args.size() == 1) {
     std::string out = "?" + print_surface_prec(ref->args[0], 0);
     Ref kind = attr_value(ref, "kind");
@@ -564,6 +602,21 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
       out += ", " + print_surface_prec(when, 0);
     }
     return out + " }";
+  }
+  if (ref->text == "set") {
+    std::vector<std::string> parts;
+    for (Ref arg : ref->args) {
+      parts.push_back(print_surface_prec(arg, 0));
+    }
+    return "{ " + join(parts, ", ") + " }";
+  }
+  if (ref->text == "broadcast" && ref->args.size() == 2 &&
+      ref->args[1]->tag == Tag::Compound && ref->args[1]->text == "args") {
+    std::vector<std::string> parts;
+    for (Ref arg : ref->args[1]->args) {
+      parts.push_back(print_surface_prec(arg, 0));
+    }
+    return print_surface_prec(ref->args[0], 80) + ".(" + join(parts, ", ") + ")";
   }
   int prec = prec_of(ref->text);
   if (prec >= 0 && ref->args.size() == 2) {
@@ -609,17 +662,13 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
 std::string print_latex_prec(Ref ref, int parent_prec);
 
 std::string latex_atom(Ref ref) {
-  static const std::vector<std::pair<std::string, std::string>> symbols = {
-      {"pi", "\\pi"},       {"alpha", "\\alpha"}, {"beta", "\\beta"},
-      {"gamma", "\\gamma"}, {"delta", "\\delta"}, {"epsilon", "\\epsilon"},
+  static const std::unordered_map<std::string, std::string> symbols = {
+      {"pi", "\\pi"},       {"alpha", "\\alpha"},   {"beta", "\\beta"},
+      {"gamma", "\\gamma"}, {"delta", "\\delta"},   {"epsilon", "\\epsilon"},
       {"theta", "\\theta"}, {"lambda", "\\lambda"}, {"mu", "\\mu"},
-      {"nu", "\\nu"},       {"sigma", "\\sigma"}, {"omega", "\\omega"}};
-  for (const auto& symbol : symbols) {
-    if (ref->text == symbol.first) {
-      return symbol.second;
-    }
-  }
-  return ref->text;
+      {"nu", "\\nu"},       {"sigma", "\\sigma"},   {"omega", "\\omega"}};
+  auto it = symbols.find(ref->text);
+  return it != symbols.end() ? it->second : ref->text;
 }
 
 std::string latex_wrap(std::string out, int prec, int parent_prec) {
@@ -647,6 +696,11 @@ std::string latex_binder(Ref binder) {
     throw Error("expected binder node");
   }
   Ref domain = binder->args[1];
+  if (domain->tag == Tag::Compound && domain->text == "approach" &&
+      domain->args.size() == 1) {
+    return print_latex_prec(binder->args[0], 0) + " \\to " +
+           print_latex_prec(domain->args[0], 0);
+  }
   if (domain->tag == Tag::Compound && domain->text == "range" &&
       domain->args.size() == 2) {
     return print_latex_prec(binder->args[0], 0) + " = " +
@@ -697,6 +751,32 @@ std::string print_latex_prec(Ref ref, int parent_prec) {
       ref->args[1]->args.size() == 1) {
     return print_latex_prec(ref->args[0], 80) + "_{" +
            print_latex_prec(ref->args[1]->args[0], 0) + "}";
+  }
+  if (ref->text == "idx" && ref->args.size() > 1) {
+    std::string out = print_latex_prec(ref->args[0], 80);
+    for (std::size_t i = 1; i < ref->args.size(); ++i) {
+      Ref index = ref->args[i];
+      if (index->tag == Tag::Compound && index->args.size() == 1 &&
+          index->text == "up") {
+        out += "^{" + print_latex_prec(index->args[0], 0) + "}";
+      } else if (index->tag == Tag::Compound && index->args.size() == 1 &&
+                 index->text == "down") {
+        out += "_{" + print_latex_prec(index->args[0], 0) + "}";
+      }
+    }
+    return out;
+  }
+  if (ref->text == "diff" && ref->args.size() >= 2) {
+    std::string out = "\\frac{d";
+    for (std::size_t i = 1; i < ref->args.size(); ++i) {
+      out += "^{}";
+    }
+    out += "}{";
+    for (std::size_t i = 1; i < ref->args.size(); ++i) {
+      out += "d" + print_latex_prec(ref->args[i], 0);
+    }
+    out += "} " + print_latex_prec(ref->args[0], 0);
+    return out;
   }
   if (ref->text == "lam" && ref->args.size() == 2 &&
       ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder") {
@@ -758,6 +838,28 @@ std::string print_latex_prec(Ref ref, int parent_prec) {
              print_latex_prec(ref->args[1], 0) + "\\,d" +
              print_latex_prec(b->args[0], 0);
     }
+  }
+  if (ref->text == "lim" && ref->args.size() == 2 &&
+      ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder" &&
+      ref->args[0]->args.size() == 2) {
+    return "\\lim_{" + latex_binder(ref->args[0]) + "} " +
+           print_latex_prec(ref->args[1], 0);
+  }
+  if ((ref->text == "sum" || ref->text == "prod") && ref->args.size() == 2 &&
+      ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder" &&
+      ref->args[0]->args.size() == 2) {
+    Ref b = ref->args[0];
+    Ref dom = b->args[1];
+    std::string cmd = ref->text == "sum" ? "\\sum" : "\\prod";
+    if (dom->tag == Tag::Compound && dom->text == "range" &&
+        dom->args.size() == 2) {
+      return cmd + "_{" + print_latex_prec(b->args[0], 0) + " = " +
+             print_latex_prec(dom->args[0], 0) + "}^{" +
+             print_latex_prec(dom->args[1], 0) + "} " +
+             print_latex_prec(ref->args[1], 0);
+    }
+    return cmd + "_{" + latex_binder(b) + "} " +
+           print_latex_prec(ref->args[1], 0);
   }
   std::vector<std::string> parts;
   for (Ref arg : ref->args) {

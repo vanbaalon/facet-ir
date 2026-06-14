@@ -1,7 +1,11 @@
 #include "facet_internal.hpp"
 
+#include <array>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -214,16 +218,66 @@ std::string sympy_wrap(std::string out, int prec, int parent_prec) {
 }
 
 std::string sympy_function_name(const std::string& head) {
-  static const std::vector<std::pair<std::string, std::string>> names = {
-      {"sin", "sin"},   {"cos", "cos"},   {"tan", "tan"},
-      {"log", "log"},   {"sqrt", "sqrt"}, {"simplify", "simplify"},
+  static const std::unordered_map<std::string, std::string> names = {
+      {"sin", "sin"},   {"cos", "cos"},       {"tan", "tan"},
+      {"log", "log"},   {"sqrt", "sqrt"},      {"simplify", "simplify"},
       {"expand", "expand"}};
-  for (const auto& name : names) {
-    if (head == name.first) {
-      return name.second;
+  auto it = names.find(head);
+  return it != names.end() ? it->second : "";
+}
+
+std::string shell_quote(const std::string& text) {
+  std::string out = "'";
+  for (char c : text) {
+    if (c == '\'') {
+      out += "'\\''";
+    } else {
+      out.push_back(c);
     }
   }
-  return "";
+  out += "'";
+  return out;
+}
+
+std::string python_string(const std::string& text) {
+  std::string out = "'";
+  for (char c : text) {
+    if (c == '\\' || c == '\'') {
+      out.push_back('\\');
+    }
+    out.push_back(c);
+  }
+  out += "'";
+  return out;
+}
+
+std::string run_command(const std::string& command) {
+  std::array<char, 256> buffer{};
+  std::string output;
+  FILE* pipe = popen(command.c_str(), "r");
+  if (!pipe) {
+    throw Error("failed to start SymPy subprocess");
+  }
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
+    output += buffer.data();
+  }
+  int code = pclose(pipe);
+  if (code != 0) {
+    throw Error("SymPy subprocess failed: " + output);
+  }
+  while (!output.empty() &&
+         (output.back() == '\n' || output.back() == '\r')) {
+    output.pop_back();
+  }
+  return output;
+}
+
+std::string sympy_python() {
+  const char* configured = std::getenv("FACET_SYMPY_PYTHON");
+  if (configured && configured[0] != '\0') {
+    return configured;
+  }
+  return "python3";
 }
 
 std::string sympy_call(const std::string& fn, Ref ref) {
@@ -273,6 +327,19 @@ std::string print_sympy_prec(Ref ref, int parent_prec) {
                       print_sympy_prec(ref->args[1], prec + 1);
     return sympy_wrap(out, prec, parent_prec);
   }
+  if ((ref->text == "=" || ref->text == "!=" || ref->text == ">" ||
+       ref->text == ">=" || ref->text == "<" || ref->text == "<=") &&
+      ref->args.size() == 2) {
+    static const std::vector<std::pair<std::string, std::string>> rels = {
+        {"=", "Eq"},  {"!=", "Ne"}, {">", "Gt"},
+        {">=", "Ge"}, {"<", "Lt"},  {"<=", "Le"}};
+    for (const auto& rel : rels) {
+      if (ref->text == rel.first) {
+        return rel.second + "(" + print_sympy_prec(ref->args[0], 0) + ", " +
+               print_sympy_prec(ref->args[1], 0) + ")";
+      }
+    }
+  }
   if (ref->text == "int" && ref->args.size() == 2 &&
       ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder" &&
       ref->args[0]->args.size() == 2) {
@@ -298,6 +365,38 @@ std::string print_sympy_prec(Ref ref, int parent_prec) {
              print_sympy_prec(domain->args[0], 0) + ", " +
              print_sympy_prec(domain->args[1], 0) + "))";
     }
+  }
+  if (ref->text == "prod" && ref->args.size() == 2 &&
+      ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder" &&
+      ref->args[0]->args.size() == 2) {
+    Ref binder = ref->args[0];
+    Ref domain = binder->args[1];
+    if (domain->tag == Tag::Compound && domain->text == "range" &&
+        domain->args.size() == 2) {
+      return "Product(" + print_sympy_prec(ref->args[1], 0) + ", (" +
+             print_sympy_prec(binder->args[0], 0) + ", " +
+             print_sympy_prec(domain->args[0], 0) + ", " +
+             print_sympy_prec(domain->args[1], 0) + "))";
+    }
+  }
+  if (ref->text == "lim" && ref->args.size() == 2 &&
+      ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder" &&
+      ref->args[0]->args.size() == 2) {
+    Ref binder = ref->args[0];
+    Ref domain = binder->args[1];
+    if (domain->tag == Tag::Compound && domain->text == "approach" &&
+        domain->args.size() == 1) {
+      return "Limit(" + print_sympy_prec(ref->args[1], 0) + ", " +
+             print_sympy_prec(binder->args[0], 0) + ", " +
+             print_sympy_prec(domain->args[0], 0) + ")";
+    }
+  }
+  if (ref->text == "diff" && ref->args.size() >= 2) {
+    std::vector<std::string> parts{print_sympy_prec(ref->args[0], 0)};
+    for (std::size_t i = 1; i < ref->args.size(); ++i) {
+      parts.push_back(print_sympy_prec(ref->args[i], 0));
+    }
+    return "diff(" + join(parts, ", ") + ")";
   }
   if (ref->text == "lam" && ref->args.size() == 2 &&
       ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder" &&
@@ -353,8 +452,7 @@ Ref from_srepr(Arena& arena, const Srepr& value) {
     return arena.sym(value.args[0].text);
   }
   if (value.head == "Integer" && value.args.size() == 1) {
-    return value.args[0].number ? arena.integer(value.args[0].text)
-                                : arena.integer(value.args[0].text);
+    return arena.integer(value.args[0].text);
   }
   if (value.head == "Rational" && value.args.size() == 2) {
     return arena.rational(value.args[0].text, value.args[1].text);
@@ -366,8 +464,25 @@ Ref from_srepr(Arena& arena, const Srepr& value) {
     return fold_variadic(arena, "+", value.args);
   }
   if (value.head == "Mul") {
-    if (value.args.size() == 2 && is_integer_literal(value.args[0], "-1")) {
+    bool first_is_neg_one =
+        is_integer_literal(value.args[0], "-1") ||
+        (value.args[0].number && value.args[0].text == "-1");
+    if (value.args.size() == 2 && first_is_neg_one) {
       return arena.compound("neg", {from_srepr(arena, value.args[1])});
+    }
+    if (value.args.size() == 2 && value.args[1].call &&
+        value.args[1].head == "Pow" && value.args[1].args.size() == 2 &&
+        is_integer_literal(value.args[1].args[1], "-1")) {
+      return arena.compound(
+          "/", {from_srepr(arena, value.args[0]),
+                from_srepr(arena, value.args[1].args[0])});
+    }
+    if (value.args.size() == 2 && value.args[0].call &&
+        value.args[0].head == "Pow" && value.args[0].args.size() == 2 &&
+        is_integer_literal(value.args[0].args[1], "-1")) {
+      return arena.compound(
+          "/", {from_srepr(arena, value.args[1]),
+                from_srepr(arena, value.args[0].args[0])});
     }
     return fold_variadic(arena, "*", value.args);
   }
@@ -381,7 +496,8 @@ Ref from_srepr(Arena& arena, const Srepr& value) {
       value.args.size() == 1) {
     return arena.compound(value.head, {from_srepr(arena, value.args[0])});
   }
-  if ((value.head == "Integral" || value.head == "Sum") &&
+  if ((value.head == "Integral" || value.head == "Sum" ||
+       value.head == "Product") &&
       value.args.size() == 2 && value.args[1].call &&
       value.args[1].head == "Tuple" && value.args[1].args.size() == 3) {
     Ref binder =
@@ -390,8 +506,50 @@ Ref from_srepr(Arena& arena, const Srepr& value) {
                         arena.compound("range",
                                        {tuple_at(arena, value.args[1], 1),
                                         tuple_at(arena, value.args[1], 2)})});
-    return arena.compound(value.head == "Integral" ? "int" : "sum",
-                          {binder, from_srepr(arena, value.args[0])});
+    std::string head = value.head == "Integral" ? "int" :
+                       value.head == "Sum" ? "sum" : "prod";
+    return arena.compound(head, {binder, from_srepr(arena, value.args[0])});
+  }
+  if (value.head == "Limit" && value.args.size() >= 3) {
+    Ref binder = arena.compound(
+        "binder",
+        {from_srepr(arena, value.args[1]),
+         arena.compound("approach", {from_srepr(arena, value.args[2])})});
+    return arena.compound("lim", {binder, from_srepr(arena, value.args[0])});
+  }
+  if (value.head == "Derivative" && value.args.size() >= 2) {
+    std::vector<Ref> args{from_srepr(arena, value.args[0])};
+    for (std::size_t i = 1; i < value.args.size(); ++i) {
+      if (value.args[i].call && value.args[i].head == "Tuple" &&
+          value.args[i].args.size() == 2 &&
+          is_integer_literal(value.args[i].args[1], "2")) {
+        args.push_back(tuple_at(arena, value.args[i], 0));
+        args.push_back(tuple_at(arena, value.args[i], 0));
+      } else if (value.args[i].call && value.args[i].head == "Tuple" &&
+                 value.args[i].args.size() == 2 &&
+                 is_integer_literal(value.args[i].args[1], "1")) {
+        args.push_back(tuple_at(arena, value.args[i], 0));
+      } else {
+        args.push_back(from_srepr(arena, value.args[i]));
+      }
+    }
+    return arena.compound("diff", args);
+  }
+  if ((value.head == "Equality" || value.head == "Unequality" ||
+       value.head == "GreaterThan" || value.head == "StrictGreaterThan" ||
+       value.head == "LessThan" || value.head == "StrictLessThan") &&
+      value.args.size() == 2) {
+    static const std::vector<std::pair<std::string, std::string>> rels = {
+        {"Equality", "="},          {"Unequality", "!="},
+        {"GreaterThan", ">="},      {"StrictGreaterThan", ">"},
+        {"LessThan", "<="},         {"StrictLessThan", "<"}};
+    for (const auto& rel : rels) {
+      if (value.head == rel.first) {
+        return arena.compound(rel.second,
+                              {from_srepr(arena, value.args[0]),
+                               from_srepr(arena, value.args[1])});
+      }
+    }
   }
   if (value.head == "Lambda" && value.args.size() == 2) {
     Ref bound = nullptr;
@@ -413,6 +571,35 @@ Ref from_srepr(Arena& arena, const Srepr& value) {
 
 Ref read_sympy_srepr(Arena& arena, const std::string& input) {
   return from_srepr(arena, SreprParser(input).parse());
+}
+
+std::string print_sympy_srepr(Ref ref) {
+  std::string source = print_sympy(ref);
+  std::string code =
+      "import re\n"
+      "import sympy as s\n"
+      "src = " + python_string(source) + "\n"
+      "names = set(re.findall(r'\\b[A-Za-z_]\\w*\\b', src))\n"
+      "known = {\n"
+      "  'Integral': s.Integral, 'Sum': s.Sum, 'Product': s.Product,\n"
+      "  'Limit': s.Limit, 'Lambda': s.Lambda, 'diff': s.diff,\n"
+      "  'sin': s.sin, 'cos': s.cos, 'tan': s.tan, 'log': s.log,\n"
+      "  'sqrt': s.sqrt, 'simplify': s.simplify, 'expand': s.expand,\n"
+      "  'Eq': s.Eq, 'Ne': s.Ne, 'Gt': s.Gt, 'Ge': s.Ge,\n"
+      "  'Lt': s.Lt, 'Le': s.Le, 'pi': s.pi\n"
+      "}\n"
+      "env = dict(known)\n"
+      "for name in names:\n"
+      "  if name not in env:\n"
+      "    env[name] = s.Symbol(name)\n"
+      "expr = eval(src, {'__builtins__': {}}, env)\n"
+      "print(s.srepr(expr))\n";
+  return run_command(shell_quote(sympy_python()) + " -c " + shell_quote(code) +
+                     " 2>&1");
+}
+
+Ref evaluate_sympy(Arena& arena, Ref ref) {
+  return read_sympy_srepr(arena, print_sympy_srepr(ref));
 }
 
 std::string print_sympy(Ref ref) {

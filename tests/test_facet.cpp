@@ -309,6 +309,10 @@ void latex_examples() {
            "?xs\\ldots?", "latex optional sequence meta");
   check_eq(print_latex(read_surface(arena, "-(a + b)")),
            "-\\left(a + b\\right)", "latex negation parentheses");
+  check_eq(print_surface(read_core(arena, "(idx T (up mu) (down nu))")),
+           "T^mu_nu", "surface prints tensor index variance");
+  check_eq(print_latex(read_core(arena, "(idx T (up mu) (down nu))")),
+           "T^{\\mu}_{\\nu}", "latex prints tensor index variance");
 }
 
 void sympy_examples() {
@@ -321,6 +325,14 @@ void sympy_examples() {
            "sqrt(x**2)", "sympy sqrt power");
   check_eq(print_sympy(read_surface(arena, "x |-> x^2")),
            "Lambda(x, x**2)", "sympy lambda");
+  check_eq(print_sympy(read_surface(arena, "prod[x : 1..n](x)")),
+           "Product(x, (x, 1, n))", "sympy product");
+  check_eq(print_sympy(read_surface(arena, "lim[x -> 0](sin(x) / x)")),
+           "Limit(sin(x)/x, x, 0)", "sympy limit");
+  check_eq(print_sympy(read_surface(arena, "diff[x, x](sin(x))")),
+           "diff(sin(x), x, x)", "sympy derivative");
+  check_eq(print_sympy(read_surface(arena, "x >= 0")),
+           "Ge(x, 0)", "sympy relation");
   check_throws_contains(
       []() {
         Arena a;
@@ -353,12 +365,21 @@ void sympy_examples() {
   check_eq(print_core(read_sympy_srepr(
                arena, "Add(Mul(Integer(-1), Symbol('x')), Integer(-1))")),
            "(+ (neg x) -1)", "sympy srepr normalizes unary minus");
-  check_throws_contains(
-      []() {
-        Arena a;
-        (void)read_sympy_srepr(a, "Derivative(Symbol('x'), Symbol('x'))");
-      },
-      "does not support head: Derivative", "sympy srepr rejects derivative");
+  check_eq(print_core(read_sympy_srepr(
+               arena, "Derivative(sin(Symbol('x')), Tuple(Symbol('x'), Integer(2)))")),
+           "(diff (sin x) x x)", "sympy srepr reads derivative");
+  check_eq(print_core(read_sympy_srepr(
+               arena, "Limit(sin(Symbol('x')), Symbol('x'), Integer(0))")),
+           "(lim (binder x (approach 0)) (sin x))", "sympy srepr reads limit");
+  check_eq(print_core(read_sympy_srepr(
+               arena, "Mul(Pow(Symbol('x'), Integer(-1)), sin(Symbol('x')))")),
+           "(/ (sin x) x)", "sympy srepr normalizes reciprocal first");
+  check_eq(print_core(read_sympy_srepr(
+               arena, "Product(Symbol('x'), Tuple(Symbol('x'), Integer(1), Symbol('n')))")),
+           "(prod (binder x (range 1 n)) x)", "sympy srepr reads product");
+  check_eq(print_core(read_sympy_srepr(
+               arena, "GreaterThan(Symbol('x'), Integer(0))")),
+           "(>= x 0)", "sympy srepr reads relation");
 }
 
 void audit_regressions() {
@@ -506,6 +527,59 @@ void diagnostics_include_locations() {
       "line 2, column 2", "strict parser reports line/column");
 }
 
+void new_feature_regressions() {
+  Arena arena;
+
+  // set literal: { } notation survives surface round-trip
+  Ref set3 = read_surface(arena, "{ 1, 2, 3 }");
+  check_eq(print_core(set3), "(set 1 2 3)", "set literal lowers to set compound");
+  check_eq(print_surface(set3), "{ 1, 2, 3 }", "set literal prints with braces");
+  check(same_tree(set3, read_surface(arena, print_surface(set3))),
+        "set literal surface round-trip");
+
+  // broadcast: f.(args) notation survives surface round-trip
+  Ref bc = read_surface(arena, "f.(a, b)");
+  check_eq(print_core(bc), "(broadcast f (args a b))",
+           "broadcast lowers to broadcast/args compound");
+  check_eq(print_surface(bc), "f.(a, b)", "broadcast prints with dot-paren");
+  check(same_tree(bc, read_surface(arena, print_surface(bc))),
+        "broadcast surface round-trip");
+
+  // lim: LaTeX renders as \lim with arrow subscript
+  check_eq(print_latex(read_surface(arena, "lim[x -> 0](sin(x)/x)")),
+           "\\lim_{x \\to 0} \\frac{\\sin\\left(x\\right)}{x}",
+           "latex lim with approach");
+
+  // sum: LaTeX renders as \sum with range bounds
+  check_eq(print_latex(read_surface(arena, "sum[k : 1..n](k)")),
+           "\\sum_{k = 1}^{n} k", "latex sum with range");
+
+  // prod: LaTeX renders as \prod with range bounds
+  check_eq(print_latex(read_surface(arena, "prod[k : 1..n](a_k)")),
+           "\\prod_{k = 1}^{n} a_{k}", "latex prod with range");
+
+  // rational: -0 denominator rejected
+  check_throws(
+      []() {
+        Arena a;
+        (void)a.rational("1", "-0");
+      },
+      "negative zero denominator rejected");
+
+  // rational: invalid numerator gives distinct error
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)a.rational("x", "2");
+      },
+      "numerator", "rational rejects non-numeric numerator");
+
+  // sympy srepr: bare -1 in Mul normalised to neg
+  check_eq(print_core(read_sympy_srepr(
+               arena, "Add(Mul(-1, Symbol('x')), Integer(-1))")),
+           "(+ (neg x) -1)", "sympy srepr bare Mul(-1, x) normalizes to neg");
+}
+
 } // namespace
 
 int main() {
@@ -521,6 +595,7 @@ int main() {
   cross_mode_agreement();
   adversarial_grammar();
   diagnostics_include_locations();
+  new_feature_regressions();
 
   if (failures) {
     std::cerr << failures << " test(s) failed\n";

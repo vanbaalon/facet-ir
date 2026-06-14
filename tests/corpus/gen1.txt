@@ -48,5 +48,36 @@ case: finite_sum
 surface: sum[x : 0..1](x * 2 + 1)
 strict: sum(binder(x, range(0, 1)), +(*(x, 2), 1))
 core: (sum (binder x (range 0 1)) (+ (* x 2) 1))
+latex: \sum_{x = 0}^{1} x 2 + 1
 sympy: Sum(x*2+1, (x, 0, 1))
 sympy_srepr: Sum(Add(Mul(Symbol('x'), Integer(2)), Integer(1)), Tuple(Symbol('x'), Integer(0), Integer(1)))
+---
+case: finite_product
+surface: prod[x : 1..n](x)
+strict: prod(binder(x, range(1, n)), x)
+core: (prod (binder x (range 1 n)) x)
+latex: \prod_{x = 1}^{n} x
+sympy: Product(x, (x, 1, n))
+sympy_srepr: Product(Symbol('x'), Tuple(Symbol('x'), Integer(1), Symbol('n')))
+---
+case: limit
+surface: lim[x -> 0](sin(x) / x)
+strict: lim(binder(x, approach(0)), /(sin(x), x))
+core: (lim (binder x (approach 0)) (/ (sin x) x))
+latex: \lim_{x \to 0} \frac{\sin\left(x\right)}{x}
+sympy: Limit(sin(x)/x, x, 0)
+sympy_srepr: Limit(Mul(sin(Symbol('x')), Pow(Symbol('x'), Integer(-1))), Symbol('x'), Integer(0))
+---
+case: derivative
+surface: diff[x, x](sin(x))
+strict: diff(sin(x), x, x)
+core: (diff (sin x) x x)
+sympy: diff(sin(x), x, x)
+sympy_srepr: Derivative(sin(Symbol('x')), Tuple(Symbol('x'), Integer(2)))
+---
+case: equality
+surface: x = 1
+strict: =(x, 1)
+core: (= x 1)
+sympy: Eq(x, 1)
+sympy_srepr: Equality(Symbol('x'), Integer(1))

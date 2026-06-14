@@ -1,6 +1,7 @@
 #include "facet_internal.hpp"
 
-#include <algorithm>
+#include <string_view>
+#include <unordered_map>
 
 namespace facet::internal {
 
@@ -31,18 +32,19 @@ const std::vector<OpInfo>& registry() {
 }
 
 const OpInfo* lookup_op(const std::string& head) {
-  for (const auto& op : registry()) {
-    if (head == op.head || head == op.surface) {
-      return &op;
+  static const std::unordered_map<std::string, const OpInfo*> index = []() {
+    std::unordered_map<std::string, const OpInfo*> m;
+    m.reserve(registry().size() * 2);
+    for (const auto& op : registry()) {
+      m.emplace(op.head, &op);
+      if (std::string_view(op.surface) != std::string_view(op.head)) {
+        m.emplace(op.surface, &op);
+      }
     }
-  }
-  return nullptr;
-}
-
-bool is_binder_head(const std::string& head) {
-  static const std::vector<std::string> heads = {
-      "sum", "int", "prod", "lim", "forall", "exists", "solve"};
-  return std::find(heads.begin(), heads.end(), head) != heads.end();
+    return m;
+  }();
+  auto it = index.find(head);
+  return it != index.end() ? it->second : nullptr;
 }
 
 int prec_of(const std::string& op) {
