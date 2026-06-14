@@ -23,8 +23,9 @@ $(TEST_BIN): tests/test_facet.cpp $(LIB_OBJS) include/facet/facet.hpp | $(BUILD)
 $(CLI_BIN): src/facet_cli.cpp $(LIB_OBJS) include/facet/facet.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) src/facet_cli.cpp $(LIB_OBJS) -o $@
 
-test: $(TEST_BIN)
+test: $(TEST_BIN) $(CLI_BIN)
 	$(TEST_BIN)
+	sh tests/test_cli.sh $(CLI_BIN)
 
 clean:
 	rm -rf $(BUILD)

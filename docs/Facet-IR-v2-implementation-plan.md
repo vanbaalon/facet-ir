@@ -127,6 +127,8 @@ Implementation note: the first spike should stay isolated as an internal layout-
 3. Add API naming comments or wrappers if desired, but avoid breaking existing C++ callers in the reclassification step.
 4. Gate: every existing SymPy test passes under old and new CLI names.
 
+Implementation note: the CLI smoke suite should cover the compatibility aliases and the new `source:sympy*` names together, so M5.0 remains a no-behaviour-change rename rather than an accidental bridge rewrite.
+
 **Step 10 — table-driven SymPy extraction.**
 1. Define a small internal mapping-table struct for head, arity/shape, emitter, and reader recogniser.
 2. Move one family at a time from `src/sympy.cpp` special cases into the table: arithmetic, functions, relations, binders, lambda.

@@ -16,7 +16,7 @@ std::string option_value(const std::string& arg, const std::string& key) {
 
 void usage() {
   std::cerr << "usage: facet read=<surface|strict|core|object|sympy-srepr> "
-               "emit=<surface|strict|core|object|latex|sympy> < input\n";
+               "emit=<surface|strict|core|object|latex|render:svg|source:sympy|source:sympy-srepr|source:sympy-core|sympy|sympy-srepr|sympy-core> < input\n";
 }
 
 } // namespace
@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
       expr = facet::read_core(arena, input);
     } else if (read == "object") {
       expr = facet::read_object(arena, input);
-    } else if (read == "sympy-srepr") {
+    } else if (read == "sympy-srepr" || read == "source:sympy-srepr") {
       expr = facet::read_sympy_srepr(arena, input);
     } else {
       usage();
@@ -76,8 +76,12 @@ int main(int argc, char** argv) {
       std::cout << facet::print_latex(expr) << "\n";
     } else if (emit == "render:svg") {
       std::cout << facet::render_svg(expr) << "\n";
-    } else if (emit == "sympy") {
+    } else if (emit == "sympy" || emit == "source:sympy") {
       std::cout << facet::print_sympy(expr) << "\n";
+    } else if (emit == "sympy-srepr" || emit == "source:sympy-srepr") {
+      std::cout << facet::print_sympy_srepr(expr) << "\n";
+    } else if (emit == "sympy-core" || emit == "source:sympy-core") {
+      std::cout << facet::print_core(facet::evaluate_sympy(arena, expr)) << "\n";
     } else {
       usage();
       return 2;

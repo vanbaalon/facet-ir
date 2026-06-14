@@ -70,6 +70,8 @@ std::string print_object(Ref ref);
 Ref read_sympy_srepr(Arena& arena, const std::string& input);
 std::string print_latex(Ref ref);
 std::string print_sympy(Ref ref);
+std::string print_sympy_srepr(Ref ref);
+Ref evaluate_sympy(Arena& arena, Ref ref);
 
 std::vector<Diagnostic> validate(Ref ref);
 std::string render_svg(Ref ref);
