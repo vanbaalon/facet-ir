@@ -35,6 +35,22 @@ void check_throws(void (*fn)(), const std::string& name) {
   }
 }
 
+void check_throws_contains(void (*fn)(), const std::string& needle,
+                           const std::string& name) {
+  try {
+    fn();
+    ++failures;
+    std::cerr << "FAIL: " << name << "\n  expected exception\n";
+  } catch (const Error& error) {
+    std::string message = error.what();
+    if (message.find(needle) == std::string::npos) {
+      ++failures;
+      std::cerr << "FAIL: " << name << "\n  got : " << message
+                << "\n  want substring: " << needle << "\n";
+    }
+  }
+}
+
 void core_round_trips() {
   Arena arena;
   std::vector<std::string> corpus = {
@@ -67,7 +83,11 @@ void strict_round_trips() {
       "+(^(x, 2), y)",
       "int(binder(x, range(0, 1)), sin(*(pi, x)))",
       "simplify(sqrt(^(x, 2)), assume=>=(x, 0))"};
-  (void)corpus;
+  for (const auto& input : corpus) {
+    Ref expr = read_strict(arena, input);
+    check(same_tree(expr, read_strict(arena, print_strict(expr))),
+          "strict round-trip " + input);
+  }
 
   Ref expr = read_strict(arena, "int(binder(x, range(0, 1)), sin(*(pi, x)))");
   check_eq(print_core(expr), "(int (binder x (range 0 1)) (sin (* pi x)))",
@@ -136,6 +156,54 @@ void surface_examples() {
   check_eq(print_surface(meta), "?xs...? + ?x", "surface prints meta vars");
 }
 
+void audit_regressions() {
+  Arena arena;
+  Ref left_power = read_core(arena, "(^ (^ a b) c)");
+  check_eq(print_surface(left_power), "(a ^ b) ^ c",
+           "right-assoc printer preserves left-nested power");
+  check(same_tree(left_power, read_surface(arena, print_surface(left_power))),
+        "left-nested power surface round-trip");
+
+  Ref left_arrow = read_core(arena, "(-> (-> A B) C)");
+  check_eq(print_surface(left_arrow), "(A -> B) -> C",
+           "right-assoc printer preserves left-nested arrow");
+  check(same_tree(left_arrow, read_surface(arena, print_surface(left_arrow))),
+        "left-nested arrow surface round-trip");
+
+  Ref atom_context = read_surface(arena, "x @ assume(y > 0)");
+  check_eq(print_core(atom_context), "(@ x (assume (> y 0)))",
+           "context on atom stays explicit");
+  check(same_tree(atom_context,
+                  read_surface(arena, print_surface(atom_context))),
+        "context on atom surface round-trip");
+
+  Ref subst_sum = read_core(arena, "(+ (subst a (= x 1)) b)");
+  check_eq(print_surface(subst_sum), "(a @ subst{x = 1}) + b",
+           "subst printer respects parent precedence");
+  check(same_tree(subst_sum, read_surface(arena, print_surface(subst_sum))),
+        "subst in addition surface round-trip");
+
+  Ref custom = read_surface(arena, "custom[x : R](body)");
+  check_eq(print_surface(custom), "custom[x : R](body)",
+           "custom binder head prints as binder syntax");
+  check(same_tree(custom, read_surface(arena, print_surface(custom))),
+        "custom binder head surface round-trip");
+
+  check_throws(
+      []() {
+        Arena a;
+        (void)a.compound("f", {}, {{"assume", a.sym("x")},
+                                   {"assume", a.sym("y")}});
+      },
+      "duplicate attributes rejected");
+  check_throws(
+      []() {
+        Arena a;
+        (void)a.rational("1", "00");
+      },
+      "zero rational denominator rejected");
+}
+
 void object_round_trips() {
   Arena arena;
   Ref expr = read_core(arena, "(int (binder x (range 0 1)) (sin (* pi x)))");
@@ -158,6 +226,22 @@ void object_round_trips() {
   Ref rat = arena.rational("1", "2");
   check(same_tree(rat, read_object(arena, print_object(rat))),
         "object rational atom round-trip");
+
+  Ref escaped = arena.string("line\nnext\tend");
+  std::string escaped_object = print_object(escaped);
+  check(escaped_object.find("\\n") != std::string::npos,
+        "object printer escapes newline");
+  check(escaped_object.find("\\t") != std::string::npos,
+        "object printer escapes tab");
+  check(same_tree(escaped, read_object(arena, escaped_object)),
+        "object escaped string round-trip");
+
+  Ref with_unknown = read_object(
+      arena,
+      "{\"head\":\"sin\",\"source\":{\"line\":1,\"notes\":[true,null]},"
+      "\"args\":[{\"atom\":\"sym\",\"value\":\"x\"}]}");
+  check_eq(print_core(with_unknown), "(sin x)",
+           "object reader skips unknown metadata keys");
 }
 
 void cross_mode_agreement() {
@@ -190,6 +274,33 @@ void adversarial_grammar() {
            "(|> a b)", "pipeline token parsed separately");
 }
 
+void diagnostics_include_locations() {
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_surface(a, "int[x : 0..1](\nsin(pi*x)");
+      },
+      "line 2, column 10", "surface parser reports line/column");
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_core(a, "(+ x\n y");
+      },
+      "line 2, column 3", "core parser reports line/column at eof");
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_surface(a, "sum[x=2](x)");
+      },
+      "line 1, column 7", "binder diagnostic includes location");
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_strict(a, "sin(\nx");
+      },
+      "line 2, column 2", "strict parser reports line/column");
+}
+
 } // namespace
 
 int main() {
@@ -197,9 +308,11 @@ int main() {
   arena_interns_and_compares_exact_trees();
   strict_round_trips();
   surface_examples();
+  audit_regressions();
   object_round_trips();
   cross_mode_agreement();
   adversarial_grammar();
+  diagnostics_include_locations();
 
   if (failures) {
     std::cerr << failures << " test(s) failed\n";

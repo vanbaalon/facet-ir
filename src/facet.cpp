@@ -1,310 +1,24 @@
-#include "facet/facet.hpp"
+#include "facet_internal.hpp"
 
-#include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <sstream>
-#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace facet {
 namespace {
 
-void hash_mix(std::uint64_t& h, std::uint64_t v) {
-  h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-}
-
-std::uint64_t hash_string(const std::string& s) {
-  std::uint64_t h = 1469598103934665603ULL;
-  for (unsigned char c : s) {
-    h ^= c;
-    h *= 1099511628211ULL;
-  }
-  return h;
-}
-
-std::string escape(const std::string& s) {
-  std::string out;
-  for (char c : s) {
-    if (c == '\\' || c == '"') {
-      out.push_back('\\');
-    }
-    out.push_back(c);
-  }
-  return out;
-}
-
-struct Tok {
-  std::string text;
-  bool eof = false;
-};
-
-class Lexer {
-public:
-  explicit Lexer(std::string input) : input_(std::move(input)) { next(); }
-
-  const Tok& peek() const { return tok_; }
-
-  bool at(const std::string& text) const { return tok_.text == text; }
-
-  bool take(const std::string& text) {
-    if (!at(text)) {
-      return false;
-    }
-    next();
-    return true;
-  }
-
-  std::string expect() {
-    if (tok_.eof) {
-      throw Error("unexpected end of input");
-    }
-    std::string text = tok_.text;
-    next();
-    return text;
-  }
-
-  void expect(const std::string& text) {
-    if (!take(text)) {
-      throw Error("expected '" + text + "', got '" + tok_.text + "'");
-    }
-  }
-
-private:
-  std::string input_;
-  std::size_t pos_ = 0;
-  Tok tok_;
-
-  void next() {
-    while (pos_ < input_.size() &&
-           std::isspace(static_cast<unsigned char>(input_[pos_]))) {
-      ++pos_;
-    }
-    if (pos_ >= input_.size()) {
-      tok_ = {"", true};
-      return;
-    }
-
-    char c = input_[pos_];
-    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_' || c == '?' ||
-        c == '\\') {
-      std::size_t start = pos_++;
-      while (pos_ < input_.size()) {
-        char d = input_[pos_];
-        if (!std::isalnum(static_cast<unsigned char>(d)) && d != '_' &&
-            d != '?' && d != '\\') {
-          break;
-        }
-        ++pos_;
-      }
-      if (input_.compare(pos_, 3, "...") == 0) {
-        pos_ += 3;
-        if (pos_ < input_.size() && input_[pos_] == '?') {
-          ++pos_;
-        }
-      }
-      tok_ = {input_.substr(start, pos_ - start), false};
-      return;
-    }
-    if (std::isdigit(static_cast<unsigned char>(c))) {
-      std::size_t start = pos_++;
-      while (pos_ < input_.size() &&
-             std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
-        ++pos_;
-      }
-      if (pos_ < input_.size() && input_[pos_] == '.' &&
-          pos_ + 1 < input_.size() && input_[pos_ + 1] != '.') {
-        ++pos_;
-        while (pos_ < input_.size() &&
-               std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
-          ++pos_;
-        }
-      }
-      tok_ = {input_.substr(start, pos_ - start), false};
-      return;
-    }
-    if (c == '"') {
-      ++pos_;
-      std::string s;
-      while (pos_ < input_.size() && input_[pos_] != '"') {
-        if (input_[pos_] == '\\' && pos_ + 1 < input_.size()) {
-          ++pos_;
-        }
-        s.push_back(input_[pos_++]);
-      }
-      if (pos_ >= input_.size()) {
-        throw Error("unterminated string");
-      }
-      ++pos_;
-      tok_ = {'"' + s + '"', false};
-      return;
-    }
-
-    static const std::vector<std::string> ops = {
-        "===", "...?", "...", ":=", "~>", "~=", "=>", "|->",
-        "|>",   "->",  "..",  ">=", "<=", "!=", ".("};
-    for (const auto& op : ops) {
-      if (input_.compare(pos_, op.size(), op) == 0) {
-        pos_ += op.size();
-        tok_ = {op, false};
-        return;
-      }
-    }
-    tok_ = {std::string(1, input_[pos_++]), false};
-  }
-};
-
-bool is_int_token(const std::string& s) {
-  return !s.empty() &&
-         std::all_of(s.begin(), s.end(),
-                     [](unsigned char c) { return std::isdigit(c); });
-}
-
-bool is_real_token(const std::string& s) {
-  bool seen_dot = false;
-  bool seen_digit = false;
-  for (char c : s) {
-    if (std::isdigit(static_cast<unsigned char>(c))) {
-      seen_digit = true;
-    } else if (c == '.' && !seen_dot) {
-      seen_dot = true;
-    } else {
-      return false;
-    }
-  }
-  return seen_dot && seen_digit;
-}
-
-bool is_string_token(const std::string& s) {
-  return s.size() >= 2 && s.front() == '"' && s.back() == '"';
-}
-
-Ref atom_from_token(Arena& arena, const std::string& token) {
-  if (is_int_token(token)) {
-    return arena.integer(token);
-  }
-  if (is_real_token(token)) {
-    return arena.real(token);
-  }
-  if (is_string_token(token)) {
-    return arena.string(token.substr(1, token.size() - 2));
-  }
-  return arena.sym(token);
-}
-
-bool is_meta_token(const std::string& token) {
-  return token.size() > 1 && token.front() == '?';
-}
-
-Ref surface_atom_from_token(Arena& arena, const std::string& token) {
-  if (is_meta_token(token)) {
-    std::string name = token.substr(1);
-    std::string kind = "one";
-    if (name.size() >= 4 && name.substr(name.size() - 4) == "...?") {
-      name.resize(name.size() - 4);
-      kind = "seq?";
-    } else if (name.size() >= 3 && name.substr(name.size() - 3) == "...") {
-      name.resize(name.size() - 3);
-      kind = "seq";
-    }
-    return arena.compound("meta", {arena.sym(name)}, {{"kind", arena.sym(kind)}});
-  }
-
-  std::size_t under = token.find('_');
-  if (under != std::string::npos && under > 0 && under + 1 < token.size()) {
-    return arena.compound(
-        "idx", {arena.sym(token.substr(0, under)),
-                arena.compound("down", {arena.sym(token.substr(under + 1))})});
-  }
-  return atom_from_token(arena, token);
-}
-
-struct OpInfo {
-  const char* head;
-  const char* surface;
-  int prec;
-  bool right_assoc;
-  const char* latex;
-};
-
-const std::vector<OpInfo>& registry() {
-  static const std::vector<OpInfo> ops = {
-      {"|>", "|>", 10, false, "\\triangleright"},
-      {"=>", "=>", 20, false, "\\Rightarrow"},
-      {"~>", "~>", 20, false, "\\to"},
-      {"~=", "~=", 20, false, "\\sim"},
-      {":=", ":=", 25, false, ":="},
-      {"=", "=", 30, false, "="},
-      {"===", "===", 30, false, "\\equiv"},
-      {"!=", "!=", 30, false, "\\ne"},
-      {">", ">", 30, false, ">"},
-      {"<", "<", 30, false, "<"},
-      {">=", ">=", 30, false, "\\ge"},
-      {"<=", "<=", 30, false, "\\le"},
-      {"range", "..", 35, false, ".."},
-      {"|->", "|->", 40, true, "\\mapsto"},
-      {"->", "->", 45, true, "\\to"},
-      {"+", "+", 50, false, "+"},
-      {"-", "-", 50, false, "-"},
-      {"*", "*", 60, false, " "},
-      {"/", "/", 60, false, "/"},
-      {"^", "^", 70, true, "^"},
-  };
-  return ops;
-}
-
-const OpInfo* lookup_op(const std::string& head) {
-  for (const auto& op : registry()) {
-    if (head == op.head || head == op.surface) {
-      return &op;
-    }
-  }
-  return nullptr;
-}
-
-bool is_binder_head(const std::string& head) {
-  static const std::vector<std::string> heads = {
-      "sum", "int", "prod", "lim", "forall", "exists", "solve"};
-  return std::find(heads.begin(), heads.end(), head) != heads.end();
-}
-
-Ref attr_value(Ref ref, const std::string& key) {
-  for (const auto& attr : ref->attrs) {
-    if (attr.key == key) {
-      return attr.value;
-    }
-  }
-  return nullptr;
-}
-
-std::string key_of(const Node& node) {
-  std::ostringstream out;
-  out << static_cast<int>(node.tag) << ':' << node.text << '(';
-  for (Ref arg : node.args) {
-    out << arg->hash << ',';
-  }
-  out << ')';
-  for (const auto& attr : node.attrs) {
-    out << ':' << attr.key << '=' << attr.value->hash;
-  }
-  return out.str();
-}
-
-int prec_of(const std::string& op) {
-  if (op == "@") {
-    return 10;
-  }
-  if (const OpInfo* info = lookup_op(op)) {
-    return info->prec;
-  }
-  return -1;
-}
-
-bool right_assoc(const std::string& op) {
-  if (const OpInfo* info = lookup_op(op)) {
-    return info->right_assoc;
-  }
-  return false;
-}
+using internal::Lexer;
+using internal::attr_value;
+using internal::atom_from_token;
+using internal::escape;
+using internal::join;
+using internal::lookup_op;
+using internal::prec_of;
+using internal::print_atom;
+using internal::right_assoc;
+using internal::surface_atom_from_token;
 
 class CoreParser {
 public:
@@ -314,7 +28,9 @@ public:
   Ref parse() {
     Ref ref = expr();
     if (!lex_.peek().eof) {
-      throw Error("trailing input after core expression");
+      throw Error("trailing input after core expression near line " +
+                  std::to_string(lex_.peek().line) + ", column " +
+                  std::to_string(lex_.peek().column));
     }
     return ref;
   }
@@ -338,8 +54,7 @@ private:
       }
       return arena_.compound(h, std::move(args), std::move(attrs));
     }
-    std::string t = lex_.expect();
-    return atom_from_token(arena_, t);
+    return atom_from_token(arena_, lex_.expect());
   }
 };
 
@@ -352,7 +67,7 @@ public:
     Ref ref = expr();
     ws();
     if (pos_ != input_.size()) {
-      throw Error("trailing input after strict expression");
+      throw Error("trailing input after strict expression at " + location(pos_));
     }
     return ref;
   }
@@ -380,14 +95,30 @@ private:
 
   void expect(char c) {
     if (!take(c)) {
-      throw Error(std::string("expected '") + c + "'");
+      throw Error(std::string("expected '") + c +
+                  "' in strict expression at " + location(pos_));
     }
+  }
+
+  std::string location(std::size_t pos) const {
+    std::size_t line = 1;
+    std::size_t column = 1;
+    for (std::size_t i = 0; i < pos && i < input_.size(); ++i) {
+      if (input_[i] == '\n') {
+        ++line;
+        column = 1;
+      } else {
+        ++column;
+      }
+    }
+    return "line " + std::to_string(line) + ", column " +
+           std::to_string(column);
   }
 
   std::string atom() {
     ws();
     if (pos_ >= input_.size()) {
-      throw Error("unexpected end of strict input");
+      throw Error("unexpected end of strict input at " + location(pos_));
     }
     if (input_[pos_] == '"') {
       std::size_t start = pos_++;
@@ -398,7 +129,8 @@ private:
         ++pos_;
       }
       if (pos_ >= input_.size()) {
-        throw Error("unterminated string");
+        throw Error("unterminated string in strict expression at " +
+                    location(start));
       }
       ++pos_;
       return input_.substr(start, pos_ - start);
@@ -410,7 +142,8 @@ private:
         ++pos_;
       }
       if (pos_ < input_.size() && input_[pos_] == '.' &&
-          pos_ + 1 < input_.size() && std::isdigit(static_cast<unsigned char>(input_[pos_ + 1]))) {
+          pos_ + 1 < input_.size() &&
+          std::isdigit(static_cast<unsigned char>(input_[pos_ + 1]))) {
         ++pos_;
         while (pos_ < input_.size() &&
                std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
@@ -493,8 +226,9 @@ public:
   Ref parse() {
     Ref ref = expr(0);
     if (!lex_.peek().eof) {
-      throw Error("trailing input after surface expression near '" +
-                  lex_.peek().text + "'");
+      throw Error("trailing input after surface expression near line " +
+                  std::to_string(lex_.peek().line) + ", column " +
+                  std::to_string(lex_.peek().column));
     }
     return ref;
   }
@@ -555,36 +289,41 @@ private:
     std::string t = lex_.expect();
     if (lex_.take(".(")) {
       std::vector<Ref> args = args_until(")");
-      return arena_.compound("broadcast", {arena_.sym(t), arena_.compound("args", args)});
+      return arena_.compound("broadcast",
+                             {arena_.sym(t), arena_.compound("args", args)});
     }
     if (lex_.take("[")) {
       if (lex_.at("]")) {
-        throw Error("empty binder");
+        throw Error("empty binder at line " + std::to_string(lex_.peek().line) +
+                    ", column " + std::to_string(lex_.peek().column));
       }
       std::string name = lex_.expect();
       std::string sep = lex_.expect();
       if (sep != ":" && sep != "->") {
-        throw Error("binder must use ':' or '->'");
+        throw Error("binder must use ':' or '->' at line " +
+                    std::to_string(lex_.peek().line) + ", column " +
+                    std::to_string(lex_.peek().column));
       }
       Ref domain = expr(0);
       lex_.expect("]");
       lex_.expect("(");
       Ref body = expr(0);
       lex_.expect(")");
-      Ref binder =
-          arena_.compound("binder", {arena_.sym(name), sep == "->" ? arena_.compound("approach", {domain}) : domain});
+      Ref binder = arena_.compound(
+          "binder",
+          {arena_.sym(name),
+           sep == "->" ? arena_.compound("approach", {domain}) : domain});
       return arena_.compound(t, {binder, body});
     }
     if (lex_.take("(")) {
       std::vector<Ref> args;
-      std::vector<Attr> attrs;
       if (!lex_.take(")")) {
         do {
           args.push_back(expr(0));
         } while (lex_.take(","));
         lex_.expect(")");
       }
-      return arena_.compound(t, args, attrs);
+      return arena_.compound(t, args);
     }
     if (lex_.take("{")) {
       std::vector<Ref> args;
@@ -623,6 +362,9 @@ private:
       args.insert(args.end(), context->args.begin(), context->args.end());
       return arena_.compound("subst", args);
     }
+    if (target->tag != Tag::Compound) {
+      return arena_.compound("@", {target, context});
+    }
     if (context->tag == Tag::Compound &&
         (context->text == "assume" || context->text == "via" ||
          context->text == "need") &&
@@ -637,17 +379,6 @@ private:
 
 std::string print_surface_prec(Ref ref, int parent_prec);
 
-std::string join(const std::vector<std::string>& parts, const std::string& sep) {
-  std::string out;
-  for (std::size_t i = 0; i < parts.size(); ++i) {
-    if (i) {
-      out += sep;
-    }
-    out += parts[i];
-  }
-  return out;
-}
-
 std::vector<std::string> printed_args(Ref ref,
                                       std::string (*printer)(Ref)) {
   std::vector<std::string> parts;
@@ -655,13 +386,6 @@ std::vector<std::string> printed_args(Ref ref,
     parts.push_back(printer(arg));
   }
   return parts;
-}
-
-std::string print_atom(Ref ref) {
-  if (ref->tag == Tag::Str) {
-    return "\"" + escape(ref->text) + "\"";
-  }
-  return ref->text;
 }
 
 std::string print_core_inner(Ref ref) {
@@ -722,12 +446,6 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
   if (ref->tag != Tag::Compound) {
     return print_atom(ref);
   }
-  if (is_binder_head(ref->text) &&
-      ref->args.size() == 2 && ref->args[0]->tag == Tag::Compound &&
-      ref->args[0]->text == "binder") {
-    return ref->text + "[" + binder_surface(ref->args[0]) + "](" +
-           print_surface_prec(ref->args[1], 0) + ")";
-  }
   if (ref->text == "lam" && ref->args.size() == 2 &&
       ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder") {
     int prec = prec_of("|->");
@@ -737,6 +455,11 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
       return "(" + out + ")";
     }
     return out;
+  }
+  if (ref->args.size() == 2 &&
+      ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder") {
+    return ref->text + "[" + binder_surface(ref->args[0]) + "](" +
+           print_surface_prec(ref->args[1], 0) + ")";
   }
   if (ref->text == "idx" && ref->args.size() == 2 &&
       ref->args[1]->tag == Tag::Compound && ref->args[1]->text == "down" &&
@@ -764,11 +487,12 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
   }
   int prec = prec_of(ref->text);
   if (prec >= 0 && ref->args.size() == 2) {
-    const OpInfo* op = lookup_op(ref->text);
+    const internal::OpInfo* op = lookup_op(ref->text);
     std::string glyph = op ? op->surface : ref->text;
-    std::string out = print_surface_prec(ref->args[0], prec) + " " +
-                      glyph + " " +
-                      print_surface_prec(ref->args[1], prec + 1);
+    bool ra = right_assoc(ref->text);
+    std::string out = print_surface_prec(ref->args[0], prec + (ra ? 1 : 0)) +
+                      " " + glyph + " " +
+                      print_surface_prec(ref->args[1], prec + (ra ? 0 : 1));
     if (ref->text == "range") {
       out = print_surface_prec(ref->args[0], prec) + glyph +
             print_surface_prec(ref->args[1], prec + 1);
@@ -783,8 +507,13 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
     for (std::size_t i = 1; i < ref->args.size(); ++i) {
       subs.push_back(print_surface_prec(ref->args[i], 0));
     }
-    return print_surface_prec(ref->args[0], 0) + " @ subst{" +
-           join(subs, ", ") + "}";
+    int at_prec = prec_of("@");
+    std::string out = print_surface_prec(ref->args[0], at_prec) + " @ subst{" +
+                      join(subs, ", ") + "}";
+    if (at_prec < parent_prec) {
+      return "(" + out + ")";
+    }
+    return out;
   }
   std::vector<std::string> parts;
   for (Ref arg : ref->args) {
@@ -820,13 +549,14 @@ std::string print_latex_inner(Ref ref) {
            print_latex_inner(ref->args[1]) + "}";
   }
   if (ref->text == "*" && ref->args.size() == 2) {
-    return print_latex_inner(ref->args[0]) + " " + print_latex_inner(ref->args[1]);
+    return print_latex_inner(ref->args[0]) + " " +
+           print_latex_inner(ref->args[1]);
   }
   if (ref->text == "/" && ref->args.size() == 2) {
     return "\\frac{" + print_latex_inner(ref->args[0]) + "}{" +
            print_latex_inner(ref->args[1]) + "}";
   }
-  if (const OpInfo* op = lookup_op(ref->text);
+  if (const internal::OpInfo* op = lookup_op(ref->text);
       op && ref->args.size() == 2 && ref->text != "range") {
     return print_latex_inner(ref->args[0]) + " " + op->latex + " " +
            print_latex_inner(ref->args[1]);
@@ -896,13 +626,132 @@ private:
     expect('"');
     std::string out;
     while (pos_ < input_.size() && input_[pos_] != '"') {
-      if (input_[pos_] == '\\' && pos_ + 1 < input_.size()) {
+      if (input_[pos_] == '\\') {
+        if (pos_ + 1 >= input_.size()) {
+          throw Error("unterminated JSON escape");
+        }
         ++pos_;
+        char escaped = input_[pos_++];
+        switch (escaped) {
+        case '"':
+        case '\\':
+        case '/':
+          out.push_back(escaped);
+          break;
+        case 'b':
+          out.push_back('\b');
+          break;
+        case 'f':
+          out.push_back('\f');
+          break;
+        case 'n':
+          out.push_back('\n');
+          break;
+        case 'r':
+          out.push_back('\r');
+          break;
+        case 't':
+          out.push_back('\t');
+          break;
+        case 'u': {
+          if (pos_ + 4 > input_.size()) {
+            throw Error("unterminated JSON unicode escape");
+          }
+          std::string hex = input_.substr(pos_, 4);
+          pos_ += 4;
+          char* end = nullptr;
+          long code = std::strtol(hex.c_str(), &end, 16);
+          if (!end || *end != '\0' || code < 0 || code > 0x7f) {
+            throw Error("unsupported JSON unicode escape");
+          }
+          out.push_back(static_cast<char>(code));
+          break;
+        }
+        default:
+          throw Error("unsupported JSON escape");
+        }
+      } else {
+        out.push_back(input_[pos_++]);
       }
-      out.push_back(input_[pos_++]);
     }
     expect('"');
     return out;
+  }
+
+  void skip_string() { (void)string(); }
+
+  void skip_literal(const std::string& literal) {
+    ws();
+    if (input_.compare(pos_, literal.size(), literal) != 0) {
+      throw Error("expected JSON literal: " + literal);
+    }
+    pos_ += literal.size();
+  }
+
+  void skip_array() {
+    expect('[');
+    if (!take(']')) {
+      do {
+        skip_value();
+      } while (take(','));
+      expect(']');
+    }
+  }
+
+  void skip_object() {
+    expect('{');
+    if (!take('}')) {
+      do {
+        skip_string();
+        expect(':');
+        skip_value();
+      } while (take(','));
+      expect('}');
+    }
+  }
+
+  void skip_value() {
+    ws();
+    if (pos_ >= input_.size()) {
+      throw Error("unexpected end of JSON");
+    }
+    char c = input_[pos_];
+    if (c == '"') {
+      skip_string();
+      return;
+    }
+    if (c == '{') {
+      skip_object();
+      return;
+    }
+    if (c == '[') {
+      skip_array();
+      return;
+    }
+    if (std::isdigit(static_cast<unsigned char>(c)) || c == '-') {
+      ++pos_;
+      while (pos_ < input_.size() &&
+             (std::isdigit(static_cast<unsigned char>(input_[pos_])) ||
+              input_[pos_] == '.' || input_[pos_] == 'e' ||
+              input_[pos_] == 'E' || input_[pos_] == '+' ||
+              input_[pos_] == '-')) {
+        ++pos_;
+      }
+      return;
+    }
+    if (input_.compare(pos_, 4, "true") == 0) {
+      skip_literal("true");
+      return;
+    }
+    if (input_.compare(pos_, 5, "false") == 0) {
+      skip_literal("false");
+      return;
+    }
+    if (input_.compare(pos_, 4, "null") == 0) {
+      skip_literal("null");
+      return;
+    }
+    throw Error("unsupported JSON value");
   }
 
   Ref value() {
@@ -960,7 +809,7 @@ private:
           take(',');
         }
       } else {
-        throw Error("unknown object key: " + key);
+        skip_value();
       }
       take(',');
     }
@@ -1035,81 +884,6 @@ std::string object_inner(Ref ref) {
 
 } // namespace
 
-Error::Error(const std::string& message) : std::runtime_error(message) {}
-
-Ref Arena::sym(std::string name) {
-  Node node;
-  node.tag = Tag::Sym;
-  node.text = std::move(name);
-  return intern(std::move(node));
-}
-
-Ref Arena::integer(std::string value) {
-  Node node;
-  node.tag = Tag::Int;
-  node.text = std::move(value);
-  return intern(std::move(node));
-}
-
-Ref Arena::rational(std::string numerator, std::string denominator) {
-  if (denominator.empty() || denominator == "0") {
-    throw Error("invalid rational denominator");
-  }
-  Node node;
-  node.tag = Tag::Rat;
-  node.text = std::move(numerator) + "/" + std::move(denominator);
-  return intern(std::move(node));
-}
-
-Ref Arena::real(std::string value) {
-  Node node;
-  node.tag = Tag::Real;
-  node.text = std::move(value);
-  return intern(std::move(node));
-}
-
-Ref Arena::string(std::string value) {
-  Node node;
-  node.tag = Tag::Str;
-  node.text = std::move(value);
-  return intern(std::move(node));
-}
-
-Ref Arena::compound(std::string h, std::vector<Ref> args,
-                    std::vector<Attr> attrs) {
-  std::sort(attrs.begin(), attrs.end(),
-            [](const Attr& a, const Attr& b) { return a.key < b.key; });
-  Node node;
-  node.tag = Tag::Compound;
-  node.text = std::move(h);
-  node.args = std::move(args);
-  node.attrs = std::move(attrs);
-  return intern(std::move(node));
-}
-
-Ref Arena::intern(Node node) {
-  std::uint64_t h = hash_string(node.text);
-  hash_mix(h, static_cast<std::uint64_t>(node.tag));
-  for (Ref arg : node.args) {
-    hash_mix(h, arg->hash);
-  }
-  for (const auto& attr : node.attrs) {
-    hash_mix(h, hash_string(attr.key));
-    hash_mix(h, attr.value->hash);
-  }
-  node.hash = h;
-  std::string key = key_of(node);
-  for (const auto& entry : index_) {
-    if (entry.first == key) {
-      return entry.second;
-    }
-  }
-  nodes_.push_back(std::make_unique<Node>(std::move(node)));
-  Ref ref = nodes_.back().get();
-  index_.push_back({key, ref});
-  return ref;
-}
-
 Ref read_core(Arena& arena, const std::string& input) {
   return CoreParser(arena, input).parse();
 }
@@ -1135,28 +909,5 @@ Ref read_object(Arena& arena, const std::string& input) {
 std::string print_object(Ref ref) { return object_inner(ref); }
 
 std::string print_latex(Ref ref) { return print_latex_inner(ref); }
-
-bool same_tree(Ref lhs, Ref rhs) {
-  if (lhs == rhs) {
-    return true;
-  }
-  if (!lhs || !rhs || lhs->tag != rhs->tag || lhs->text != rhs->text ||
-      lhs->args.size() != rhs->args.size() ||
-      lhs->attrs.size() != rhs->attrs.size()) {
-    return false;
-  }
-  for (std::size_t i = 0; i < lhs->args.size(); ++i) {
-    if (!same_tree(lhs->args[i], rhs->args[i])) {
-      return false;
-    }
-  }
-  for (std::size_t i = 0; i < lhs->attrs.size(); ++i) {
-    if (lhs->attrs[i].key != rhs->attrs[i].key ||
-        !same_tree(lhs->attrs[i].value, rhs->attrs[i].value)) {
-      return false;
-    }
-  }
-  return true;
-}
 
 } // namespace facet

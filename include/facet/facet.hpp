@@ -4,6 +4,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -39,7 +40,7 @@ public:
 
 private:
   std::vector<std::unique_ptr<Node>> nodes_;
-  std::vector<std::pair<std::string, Ref>> index_;
+  std::unordered_map<std::string, Ref> index_;
 
   Ref intern(Node node);
 };

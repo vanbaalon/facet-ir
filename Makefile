@@ -2,7 +2,8 @@ CXX ?= c++
 CXXFLAGS ?= -std=c++20 -Wall -Wextra -Wpedantic -Iinclude
 
 BUILD := build
-LIB_OBJS := $(BUILD)/facet.o
+LIB_SRCS := src/ast.cpp src/lexer.cpp src/registry.cpp src/facet.cpp
+LIB_OBJS := $(LIB_SRCS:src/%.cpp=$(BUILD)/%.o)
 TEST_BIN := $(BUILD)/test_facet
 CLI_BIN := $(BUILD)/facet
 
@@ -13,7 +14,7 @@ all: $(TEST_BIN) $(CLI_BIN)
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/facet.o: src/facet.cpp include/facet/facet.hpp | $(BUILD)
+$(BUILD)/%.o: src/%.cpp include/facet/facet.hpp src/facet_internal.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(TEST_BIN): tests/test_facet.cpp $(LIB_OBJS) include/facet/facet.hpp | $(BUILD)
