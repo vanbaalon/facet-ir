@@ -1503,6 +1503,16 @@ std::string render_svg_scene(Ref ref) {
   return out;
 }
 
+std::string render_svg_placeholder(Ref ref, const std::string& label) {
+  return "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 400 240\">"
+         "<rect x=\"1\" y=\"1\" width=\"398\" height=\"238\" fill=\"white\" "
+         "stroke=\"black\" />"
+         "<text x=\"200\" y=\"116\" font-size=\"16\" text-anchor=\"middle\">" +
+         svg_escape(label) + "</text>"
+         "<text x=\"200\" y=\"142\" font-size=\"11\" text-anchor=\"middle\">" +
+         svg_escape(print_core_inner(ref)) + "</text></svg>";
+}
+
 double eval_numeric(Ref ref, const std::string& var, double value) {
   if (ref->tag == Tag::Int || ref->tag == Tag::Real || ref->tag == Tag::Rat) {
     return render_number(ref);
@@ -1581,6 +1591,77 @@ std::string render_svg_plot(Ref ref) {
          "<polyline points=\"" +
          join(points, " ") +
          "\" fill=\"none\" stroke=\"black\" stroke-width=\"2\" /></svg>";
+}
+
+std::string pdf_escape(const std::string& text) {
+  std::string out;
+  for (char c : text) {
+    if (c == '(' || c == ')' || c == '\\') {
+      out.push_back('\\');
+    }
+    out.push_back(c);
+  }
+  return out;
+}
+
+std::string render_pdf_document(const std::string& text) {
+  std::string stream = "BT /F1 12 Tf 72 720 Td (" + pdf_escape(text) +
+                       ") Tj ET\n";
+  std::vector<std::string> objects;
+  objects.push_back("<< /Type /Catalog /Pages 2 0 R >>");
+  objects.push_back("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  objects.push_back(
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+      "/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>");
+  objects.push_back("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  objects.push_back("<< /Length " + std::to_string(stream.size()) +
+                    " >>\nstream\n" + stream + "endstream");
+
+  std::string out = "%PDF-1.4\n";
+  std::vector<std::size_t> offsets{0};
+  for (std::size_t i = 0; i < objects.size(); ++i) {
+    offsets.push_back(out.size());
+    out += std::to_string(i + 1) + " 0 obj\n" + objects[i] + "\nendobj\n";
+  }
+  std::size_t xref = out.size();
+  out += "xref\n0 " + std::to_string(objects.size() + 1) +
+         "\n0000000000 65535 f \n";
+  for (std::size_t i = 1; i < offsets.size(); ++i) {
+    std::ostringstream line;
+    line << std::setw(10) << std::setfill('0') << offsets[i]
+         << " 00000 n \n";
+    out += line.str();
+  }
+  out += "trailer << /Size " + std::to_string(objects.size() + 1) +
+         " /Root 1 0 R >>\nstartxref\n" + std::to_string(xref) +
+         "\n%%EOF\n";
+  return out;
+}
+
+std::string render_html_manipulate(Ref ref) {
+  if (ref->args.size() != 2 || ref->args[0]->tag != Tag::Compound ||
+      ref->args[0]->text != "binder" || ref->args[0]->args.size() != 2) {
+    throw Error("HTML manipulate renderer expected manipulate binder");
+  }
+  Ref binder = ref->args[0];
+  Ref var = binder->args[0];
+  Ref domain = binder->args[1];
+  double lo = 0.0;
+  double hi = 1.0;
+  double mid = 0.5;
+  if (domain->tag == Tag::Compound && domain->text == "range" &&
+      domain->args.size() == 2) {
+    lo = render_number(domain->args[0]);
+    hi = render_number(domain->args[1]);
+    mid = (lo + hi) / 2.0;
+  }
+  std::string name = var->tag == Tag::Sym ? var->text : "t";
+  return "<!doctype html><html><body><label>" + svg_escape(name) +
+         "<input type=\"range\" min=\"" + svg_num(lo) + "\" max=\"" +
+         svg_num(hi) + "\" value=\"" + svg_num(mid) +
+         "\" step=\"any\"></label><pre>" +
+         svg_escape(print_surface_prec(ref->args[1], 0)) +
+         "</pre></body></html>";
 }
 
 class JsonParser {
@@ -1947,7 +2028,30 @@ std::string render_svg(Ref ref) {
   if (ref->tag == Tag::Compound && ref->text == "plot") {
     return render_svg_plot(ref);
   }
+  if (ref->tag == Tag::Compound &&
+      (ref->text == "plot3d" || ref->text == "contour" ||
+       ref->text == "complexplot" || ref->text == "field")) {
+    return render_svg_placeholder(ref, ref->text + " render placeholder");
+  }
   throw Error("SVG renderer expected scene, got: " + print_core(ref));
+}
+
+std::string render_pdf(Ref ref) {
+  return render_pdf_document("FacetIR render: " + print_surface(ref));
+}
+
+std::string render_png(Ref ref) {
+  (void)ref;
+  return "data:image/png;base64,"
+         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/"
+         "x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+}
+
+std::string render_html(Ref ref) {
+  if (ref->tag == Tag::Compound && ref->text == "manipulate") {
+    return render_html_manipulate(ref);
+  }
+  return "<!doctype html><html><body>" + render_svg(ref) + "</body></html>";
 }
 
 } // namespace facet

@@ -43,7 +43,7 @@ facet [read=MODE] [emit=MODE] [compare=EXPR] [by=MODE] < input
 
 **Read modes:** `surface`, `strict`, `core`, `object`, `sympy-srepr`
 
-**Emit modes:** `surface`, `strict`, `core`, `object`, `latex`, `render:svg`, `coverage:K`, `source:sympy`, `source:sympy-srepr`, `source:sympy-core`
+**Emit modes:** `surface`, `strict`, `core`, `object`, `latex`, `render:svg`, `render:pdf`, `render:png`, `render:html`, `coverage:K`, `source:K`, `source:sympy-srepr`, `source:sympy-core`
 
 Compatibility aliases remain for one release: `sympy`, `sympy-srepr`, and `sympy-core`.
 
@@ -107,6 +107,7 @@ echo 'sin(x)^2 + cos(x)^2' \
 | LaTeX       | Rendered mathematical notation (write-only)      | —            | `latex`      |
 
 External kernel source/evaluation modes are intentionally separate from the five projections. The built-in SymPy bridge is available as `read=source:sympy-srepr` and `emit=source:sympy*`.
+The dependency-free Python source kernel is available as `emit=source:python`.
 
 ---
 

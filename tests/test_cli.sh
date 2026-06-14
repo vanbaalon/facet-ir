@@ -25,6 +25,15 @@ expect "source:sympy-srepr read alias" \
 EXPECT='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><circle cx="200" cy="200" r="3" fill="black" /></svg>'
 expect "render svg CLI" 'scene{ point(0, 0) }' emit=render:svg
 
+EXPECT='math.sin(x)**2+math.sqrt(y)'
+expect "source python CLI" 'sin(x)^2 + sqrt(y)' emit=source:python
+
+EXPECT='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
+expect "render png CLI" 'plot3d[x : 0..1](x^2)' emit=render:png
+
+EXPECT='<!doctype html><html><body><label>t<input type="range" min="0" max="2" value="1" step="any"></label><pre>sin(t * x)</pre></body></html>'
+expect "render html manipulate CLI" 'manipulate[t : 0..2](sin(t*x))' emit=render:html
+
 EXPECT='coverage: 2/3 supported[kernel=sympy]
 unmapped: root.args[1] unknown_fn kernel=sympy'
 expect "coverage CLI" 'sin(x) + unknown_fn(y)' emit=coverage:sympy

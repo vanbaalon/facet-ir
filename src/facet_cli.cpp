@@ -17,7 +17,7 @@ std::string option_value(const std::string& arg, const std::string& key) {
 
 void usage() {
   std::cerr << "usage: facet read=<surface|strict|core|object|sympy-srepr> "
-               "emit=<surface|strict|core|object|latex|render:svg|coverage:K|source:sympy|source:sympy-srepr|source:sympy-core|sympy|sympy-srepr|sympy-core> "
+               "emit=<surface|strict|core|object|latex|render:svg|render:pdf|render:png|render:html|coverage:K|source:K|source:sympy-srepr|source:sympy-core|sympy|sympy-srepr|sympy-core> "
                "[compare=EXPR] [by=<structural|simplify|numeric|numeric(samples=N,tol=E)>] < input\n";
 }
 
@@ -127,9 +127,18 @@ int main(int argc, char** argv) {
       std::cout << facet::print_latex(expr) << "\n";
     } else if (emit == "render:svg") {
       std::cout << facet::render_svg(expr) << "\n";
+    } else if (emit == "render:pdf") {
+      std::cout << facet::render_pdf(expr);
+    } else if (emit == "render:png") {
+      std::cout << facet::render_png(expr) << "\n";
+    } else if (emit == "render:html") {
+      std::cout << facet::render_html(expr) << "\n";
     } else if (emit.rfind("coverage:", 0) == 0) {
       std::cout << format_coverage(facet::coverage(expr, emit.substr(9)))
                 << "\n";
+    } else if (emit.rfind("source:", 0) == 0 &&
+               emit != "source:sympy-srepr" && emit != "source:sympy-core") {
+      std::cout << facet::print_source(expr, emit.substr(7)) << "\n";
     } else if (emit == "sympy" || emit == "source:sympy") {
       std::cout << facet::print_sympy(expr) << "\n";
     } else if (emit == "sympy-srepr" || emit == "source:sympy-srepr") {

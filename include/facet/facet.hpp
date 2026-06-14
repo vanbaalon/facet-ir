@@ -46,6 +46,27 @@ struct Coverage {
   std::vector<Unmapped> missing;
 };
 
+struct Ok {
+  std::string detail;
+};
+
+struct Unknown {
+  std::string detail;
+};
+
+struct Fail {
+  std::string detail;
+};
+
+struct Counterexample {
+  std::string witness;
+};
+
+struct Conjecture {
+  std::string kernel;
+  std::string detail;
+};
+
 struct CompareResult {
   std::string status;
   std::string by;
@@ -93,6 +114,7 @@ std::string print_object(Ref ref);
 
 Ref read_sympy_srepr(Arena& arena, const std::string& input);
 std::string print_latex(Ref ref);
+std::string print_source(Ref ref, const std::string& kernel);
 std::string print_sympy(Ref ref);
 std::string print_sympy_srepr(Ref ref);
 Ref evaluate_sympy(Arena& arena, Ref ref);
@@ -101,6 +123,9 @@ CompareResult compare(Arena& arena, Ref lhs, Ref rhs, const std::string& by);
 
 std::vector<Diagnostic> validate(Ref ref);
 std::string render_svg(Ref ref);
+std::string render_pdf(Ref ref);
+std::string render_png(Ref ref);
+std::string render_html(Ref ref);
 bool same_tree(Ref lhs, Ref rhs);
 
 } // namespace facet

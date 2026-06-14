@@ -19,7 +19,7 @@
 
 The cheapest, highest-value work (indexing, dicts, validator) needs **no new parser** and is immediately useful for spin-chain / QSC expressions. The expensive work (indentation parser, kernel engine) is sequenced behind it.
 
-**Implementation status:** v2's planned core is implemented in this repository: M1 indexing/slicing/dicts, M2 validator warnings, M3 layout/do blocks, M4 SVG scene/plot rendering, and M5 kernel source aliases/manifests/coverage/compare. Deferred non-goals remain deferred as listed in §7.
+**Implementation status:** v2's planned core is implemented in this repository: M1 indexing/slicing/dicts, M2 validator warnings, M3 layout/do blocks, M4 SVG/PDF/PNG/HTML render surfaces including primitive scenes, sampled 2D plots, higher-plot placeholders, and `manipulate` sliders, and M5 kernel source aliases/manifests/coverage/compare with SymPy plus a second Python source kernel. Deferred non-goals remain deferred as listed in §7.
 
 ---
 
@@ -152,6 +152,8 @@ Implementation note: the initial kernel skeleton uses an internal manifest for S
 4. Gate: agreement reports always include the `by` mode; disagreement reports include the two kernel labels and a witness.
 
 Implementation note: the compare API returns labelled `CompareResult` data. `by=structural` is intrinsic via `same_tree`; `by=simplify` uses a deterministic same-tree precheck and otherwise routes through the SymPy transformer, returning `Unknown` if the subprocess/backend is unavailable. `by=numeric` and `by=numeric(samples=N,tol=E)` run deterministic local samples, label the result as evidence, and include `tol`, `samples`, and a witness on disagreement.
+
+Completion note: the remaining v2 surface area is implemented without adding external dependencies. `source:python` is the second concrete source kernel; `render:pdf` emits a minimal valid PDF document; `render:png` emits a deterministic PNG data URI; higher-dimensional plot heads have deterministic SVG placeholders until a raster plotting dependency is introduced; `render:html` emits interactive slider markup for `manipulate`.
 
 ---
 

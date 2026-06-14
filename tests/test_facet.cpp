@@ -545,6 +545,14 @@ void kernel_mapping_and_coverage() {
   check_eq(std::to_string(stub.missing.size()), "3",
            "stub kernel reports all compound heads missing");
 
+  check_eq(print_source(read_surface(arena, "sin(x)^2 + sqrt(y)"), "python"),
+           "math.sin(x)**2+math.sqrt(y)", "python source kernel emits source");
+  Coverage py = coverage(read_surface(arena, "sin(x) + int[t : 0..1](t)"),
+                         "python");
+  check_eq(py.kernel, "python", "coverage supports python kernel");
+  check_eq(std::to_string(py.missing.size()), "3",
+           "python kernel reports unsupported calculus binder tree");
+
   check_throws_contains(
       []() {
         Arena a;
@@ -1042,6 +1050,19 @@ void plot_svg_renderer() {
         (void)render_svg(read_surface(a, "plot[x : 0..1](a*x)"));
       },
       "cannot evaluate symbol", "plot renderer reports unsupported symbols");
+
+  check(render_svg(read_surface(arena, "plot3d[x : 0..1](x^2)"))
+            .find("plot3d render placeholder") != std::string::npos,
+        "plot3d renders deterministic svg placeholder");
+  check(render_png(read_surface(arena, "plot3d[x : 0..1](x^2)"))
+            .find("data:image/png;base64,") == 0,
+        "plot3d png renderer emits data uri");
+  check(render_pdf(read_surface(arena, "scene{ point(0, 0) }"))
+            .find("%PDF-1.4") == 0,
+        "pdf renderer emits pdf document");
+  check(render_html(read_surface(arena, "manipulate[t : 0..2](sin(t * x))"))
+            .find("<input type=\"range\"") != std::string::npos,
+        "manipulate html renderer emits slider");
 }
 
 void registered_binder_heads() {

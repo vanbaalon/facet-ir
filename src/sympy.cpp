@@ -280,9 +280,39 @@ const KernelManifest& stub_manifest() {
   return manifest;
 }
 
+const KernelManifest& python_manifest() {
+  static const KernelManifest manifest = {
+      "python",
+      "source-only",
+      "transformer",
+      {
+          {"+", MapKind::Infix, "+", 50},
+          {"-", MapKind::Infix, "-", 50},
+          {"*", MapKind::Infix, "*", 60},
+          {"/", MapKind::Infix, "/", 60},
+          {"^", MapKind::Infix, "**", 70},
+          {"sin", MapKind::Function, "math.sin"},
+          {"cos", MapKind::Function, "math.cos"},
+          {"tan", MapKind::Function, "math.tan"},
+          {"log", MapKind::Function, "math.log"},
+          {"sqrt", MapKind::Function, "math.sqrt"},
+          {"exp", MapKind::Function, "math.exp"},
+          {"=", MapKind::Relation, "=="},
+          {"!=", MapKind::Relation, "!="},
+          {">", MapKind::Relation, ">"},
+          {">=", MapKind::Relation, ">="},
+          {"<", MapKind::Relation, "<"},
+          {"<=", MapKind::Relation, "<="},
+      }};
+  return manifest;
+}
+
 const KernelManifest& kernel_manifest(const std::string& kernel) {
   if (kernel == "sympy") {
     return sympy_manifest();
+  }
+  if (kernel == "python") {
+    return python_manifest();
   }
   if (kernel == "stub") {
     return stub_manifest();
@@ -308,6 +338,10 @@ kernel_index(const KernelManifest& manifest) {
   }
   if (std::string_view(manifest.name) == "stub") {
     static const auto index = build_kernel_index(stub_manifest());
+    return index;
+  }
+  if (std::string_view(manifest.name) == "python") {
+    static const auto index = build_kernel_index(python_manifest());
     return index;
   }
   throw Error("unknown kernel manifest: " + std::string(manifest.name));
@@ -380,6 +414,70 @@ std::string sympy_call(const std::string& fn, Ref ref) {
     parts.push_back(print_sympy_prec(arg, 0));
   }
   return fn + "(" + join(parts, ", ") + ")";
+}
+
+std::string print_source_prec(Ref ref, const KernelManifest& manifest,
+                              int parent_prec);
+
+std::string source_call(const std::string& fn, Ref ref,
+                        const KernelManifest& manifest) {
+  std::vector<std::string> parts;
+  for (Ref arg : ref->args) {
+    parts.push_back(print_source_prec(arg, manifest, 0));
+  }
+  return fn + "(" + join(parts, ", ") + ")";
+}
+
+std::string print_source_prec(Ref ref, const KernelManifest& manifest,
+                              int parent_prec) {
+  if (std::string_view(manifest.name) == "sympy") {
+    return print_sympy_prec(ref, parent_prec);
+  }
+  if (ref->tag != Tag::Compound) {
+    if (std::string_view(manifest.name) == "python" && ref->tag == Tag::Sym &&
+        ref->text == "pi") {
+      return "math.pi";
+    }
+    return sympy_atom(ref);
+  }
+  if (!ref->attrs.empty()) {
+    throw Error(std::string(manifest.name) +
+                " source emit does not support attributed expression: " +
+                ref->text);
+  }
+  if (ref->text == "neg" && ref->args.size() == 1) {
+    return sympy_wrap("-" + print_source_prec(ref->args[0], manifest, 80),
+                      80, parent_prec);
+  }
+  const KernelMapEntry* table_entry = lookup_kernel_entry(manifest, ref->text);
+  if (table_entry && table_entry->kind == MapKind::Infix &&
+      ref->args.size() == 2) {
+    int prec = table_entry->prec;
+    int rhs_prec = ref->text == "^" ? prec : prec + 1;
+    int lhs_prec = ref->text == "^" ? prec + 1 : prec;
+    std::string out = print_source_prec(ref->args[0], manifest, lhs_prec) +
+                      table_entry->target +
+                      print_source_prec(ref->args[1], manifest, rhs_prec);
+    return sympy_wrap(out, prec, parent_prec);
+  }
+  if (table_entry && table_entry->kind == MapKind::Relation &&
+      ref->args.size() == 2) {
+    if (std::string_view(manifest.name) == "python") {
+      int prec = 30;
+      std::string out = print_source_prec(ref->args[0], manifest, prec) +
+                        table_entry->target +
+                        print_source_prec(ref->args[1], manifest, prec + 1);
+      return sympy_wrap(out, prec, parent_prec);
+    }
+    return std::string(table_entry->target) + "(" +
+           print_source_prec(ref->args[0], manifest, 0) + ", " +
+           print_source_prec(ref->args[1], manifest, 0) + ")";
+  }
+  if (table_entry && table_entry->kind == MapKind::Function) {
+    return source_call(table_entry->target, ref, manifest);
+  }
+  throw Error(std::string(manifest.name) +
+              " source emit does not support head: " + ref->text);
 }
 
 std::string print_sympy_prec(Ref ref, int parent_prec) {
@@ -730,9 +828,13 @@ bool coverage_supports_head(const KernelManifest& manifest,
   if (lookup_kernel_entry(manifest, head)) {
     return true;
   }
+  if (head == "neg" &&
+      (std::string_view(manifest.name) == "sympy" ||
+       std::string_view(manifest.name) == "python")) {
+    return true;
+  }
   if (std::string(manifest.name) == "sympy") {
-    return head == "neg" || head == "binder" || head == "range" ||
-           head == "approach";
+    return head == "binder" || head == "range" || head == "approach";
   }
   return false;
 }
@@ -768,6 +870,17 @@ void require_sympy_coverage(Ref ref) {
     const Unmapped& first = cov.missing.front();
     throw Error("SymPy emit unmapped head at " + first.path + ": " +
                 first.head);
+  }
+}
+
+void require_source_coverage(Ref ref, const KernelManifest& manifest) {
+  Coverage cov;
+  cov.kernel = manifest.name;
+  coverage_walk(ref, manifest, "root", cov);
+  if (!cov.missing.empty()) {
+    const Unmapped& first = cov.missing.front();
+    throw Error(std::string(manifest.name) + " source emit unmapped head at " +
+                first.path + ": " + first.head);
   }
 }
 
@@ -971,6 +1084,12 @@ Ref evaluate_sympy(Arena& arena, Ref ref) {
 std::string print_sympy(Ref ref) {
   require_sympy_coverage(ref);
   return print_sympy_prec(ref, 0);
+}
+
+std::string print_source(Ref ref, const std::string& kernel) {
+  const KernelManifest& manifest = kernel_manifest(kernel);
+  require_source_coverage(ref, manifest);
+  return print_source_prec(ref, manifest, 0);
 }
 
 Coverage coverage(Ref ref, const std::string& kernel) {
