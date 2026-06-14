@@ -19,6 +19,8 @@
 
 The cheapest, highest-value work (indexing, dicts, validator) needs **no new parser** and is immediately useful for spin-chain / QSC expressions. The expensive work (indentation parser, kernel engine) is sequenced behind it.
 
+**Implementation status:** v2's planned core is implemented in this repository: M1 indexing/slicing/dicts, M2 validator warnings, M3 layout/do blocks, M4 SVG scene/plot rendering, and M5 kernel source aliases/manifests/coverage/compare. Deferred non-goals remain deferred as listed in §7.
+
 ---
 
 ## 1. Milestones (dependency-ordered; each shippable)
@@ -149,7 +151,7 @@ Implementation note: the initial kernel skeleton uses an internal manifest for S
 3. Add numeric comparison only with explicit `samples` and `tol` in the report.
 4. Gate: agreement reports always include the `by` mode; disagreement reports include the two kernel labels and a witness.
 
-Implementation note: the first compare API returns labelled `CompareResult` data. `by=structural` is intrinsic via `same_tree`; `by=simplify` uses a deterministic same-tree precheck and otherwise routes through the SymPy transformer, returning `Unknown` if the subprocess/backend is unavailable.
+Implementation note: the compare API returns labelled `CompareResult` data. `by=structural` is intrinsic via `same_tree`; `by=simplify` uses a deterministic same-tree precheck and otherwise routes through the SymPy transformer, returning `Unknown` if the subprocess/backend is unavailable. `by=numeric` and `by=numeric(samples=N,tol=E)` run deterministic local samples, label the result as evidence, and include `tol`, `samples`, and a witness on disagreement.
 
 ---
 
@@ -262,7 +264,7 @@ Acceptance per phase: M5.0 old commands still work under new names; M5.1 `read(K
 2. **Kernel transport = code execution** — sandbox/timeout from M5.1; never optional.
 3. **`compare` numeric agreement is never a proof** — must be labelled `by=numeric` in every report; never collapses into a bare "agree".
 4. **Graphics renderer scope creep** — ship SVG + sampling minimally first; resist a full plotting library in M4.
-5. **Doc/code drift** — the spec now leads the code; the one concrete contradiction is the repo's `emit=sympy*` modes, retired in M5.0. Reconcile there first so the architecture is real before more kernels pile on.
+5. **Doc/code drift** — keep examples aligned with the v2 distinction between intrinsic projections and external kernel-source modes. `emit=sympy*` remains only as a one-release compatibility alias for `emit=source:sympy*`.
 
 ---
 

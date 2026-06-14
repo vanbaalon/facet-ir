@@ -14,7 +14,7 @@ FacetIR is a C++ library and CLI tool that provides a single abstract syntax tre
 
 **Bridging human notation and machine-readable form.** Surface notation is designed to be typed at a keyboard without special symbols: `int[x : 0..1](sin(pi*x))`, `forall[x : R](x^2 >= 0)`, `rule pyth: sin(?a)^2 + cos(?a)^2 ~> 1`. Context metadata is attached inline with `@`: `simplify(expr) @ assume(x >= 0) @ via(sympy)`. All of this sugar is lowered to a small set of core node types.
 
-**SymPy for computation.** The SymPy bridge lets FacetIR expressions be evaluated by Python's SymPy CAS and the results read back into the arena. Assumptions expressed as FacetIR predicates (`x >= 0`) are automatically translated to SymPy `Symbol` keyword arguments. This keeps the FacetIR layer notation-focused while delegating numeric and algebraic computation to a mature CAS.
+**Kernels for computation.** FacetIR projections are intrinsic and lossless; external systems such as SymPy are kernels. The SymPy bridge can emit kernel source, evaluate expressions via Python's SymPy CAS, and read results back into the arena. Assumptions expressed as FacetIR predicates (`x >= 0`) are automatically translated to SymPy `Symbol` keyword arguments.
 
 ---
 
@@ -35,7 +35,7 @@ make test
 ### CLI Usage
 
 ```
-facet [read=MODE] [emit=MODE] < input
+facet [read=MODE] [emit=MODE] [compare=EXPR] [by=MODE] < input
 ```
 
 - `read` controls the input format (default: `surface`).
@@ -43,7 +43,11 @@ facet [read=MODE] [emit=MODE] < input
 
 **Read modes:** `surface`, `strict`, `core`, `object`, `sympy-srepr`
 
-**Emit modes:** `surface`, `strict`, `core`, `object`, `latex`, `sympy`, `sympy-srepr`, `sympy-core`
+**Emit modes:** `surface`, `strict`, `core`, `object`, `latex`, `render:svg`, `coverage:K`, `source:sympy`, `source:sympy-srepr`, `source:sympy-core`
+
+Compatibility aliases remain for one release: `sympy`, `sympy-srepr`, and `sympy-core`.
+
+**Compare modes:** `structural`, `simplify`, `numeric`, or `numeric(samples=N,tol=E)`.
 
 ### Examples
 
@@ -72,14 +76,22 @@ Parse a SymPy srepr and emit surface:
 
 ```sh
 echo "Integral(sin(Mul(pi, Symbol('x'))), Tuple(Symbol('x'), Integer(0), Integer(1)))" \
-  | facet read=sympy-srepr emit=surface
+  | facet read=source:sympy-srepr emit=surface
 # int[x : 0..1](sin(pi * x))
 ```
 
 Evaluate via SymPy and return core:
 
 ```sh
-echo 'simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)' | facet emit=sympy-core
+echo 'simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)' | facet emit=source:sympy-core
+```
+
+Compare with labelled evidence:
+
+```sh
+echo 'sin(x)^2 + cos(x)^2' \
+  | facet 'compare=1' 'by=numeric(samples=20,tol=1e-9)'
+# agreement: Ok[by=numeric, strength=evidence, detail=numeric_samples, tol=1e-09, samples=20]
 ```
 
 ---
@@ -93,7 +105,8 @@ echo 'simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)' | facet emit=sympy-core
 | Core        | Compact S-expression (Lisp-style)                | `core`       | `core`       |
 | Object      | JSON tree, machine-readable                      | `object`     | `object`     |
 | LaTeX       | Rendered mathematical notation (write-only)      | —            | `latex`      |
-| SymPy srepr | SymPy internal repr (read) / SymPy string (emit) | `sympy-srepr`| `sympy`, `sympy-srepr`, `sympy-core` |
+
+External kernel source/evaluation modes are intentionally separate from the five projections. The built-in SymPy bridge is available as `read=source:sympy-srepr` and `emit=source:sympy*`.
 
 ---
 

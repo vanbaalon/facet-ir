@@ -1,10 +1,14 @@
 #include "facet_internal.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -767,6 +771,176 @@ void require_sympy_coverage(Ref ref) {
   }
 }
 
+struct NumericOptions {
+  int samples = 100;
+  double tol = 1e-9;
+};
+
+bool starts_with(std::string_view text, std::string_view prefix) {
+  return text.substr(0, prefix.size()) == prefix;
+}
+
+NumericOptions parse_numeric_options(const std::string& by) {
+  NumericOptions options;
+  if (by == "numeric") {
+    return options;
+  }
+  std::string_view view(by);
+  if (!starts_with(view, "numeric(") || view.back() != ')') {
+    throw Error("unknown compare mode: " + by);
+  }
+  std::string inner(view.substr(8, view.size() - 9));
+  std::size_t start = 0;
+  while (start <= inner.size()) {
+    std::size_t comma = inner.find(',', start);
+    std::string item = inner.substr(start, comma == std::string::npos
+                                               ? std::string::npos
+                                               : comma - start);
+    item.erase(std::remove_if(item.begin(), item.end(),
+                              [](unsigned char c) { return std::isspace(c); }),
+               item.end());
+    if (!item.empty()) {
+      std::size_t eq = item.find('=');
+      if (eq == std::string::npos) {
+        throw Error("numeric compare option must use key=value: " + item);
+      }
+      std::string key = item.substr(0, eq);
+      std::string value = item.substr(eq + 1);
+      if (key == "samples") {
+        options.samples = std::stoi(value);
+      } else if (key == "tol") {
+        options.tol = std::stod(value);
+      } else {
+        throw Error("unknown numeric compare option: " + key);
+      }
+    }
+    if (comma == std::string::npos) {
+      break;
+    }
+    start = comma + 1;
+  }
+  if (options.samples <= 0) {
+    throw Error("numeric compare samples must be positive");
+  }
+  if (!(options.tol >= 0.0)) {
+    throw Error("numeric compare tol must be non-negative");
+  }
+  return options;
+}
+
+double numeric_atom(Ref ref) {
+  if (ref->tag == Tag::Int || ref->tag == Tag::Real) {
+    return std::stod(ref->text);
+  }
+  if (ref->tag == Tag::Rat) {
+    std::size_t slash = ref->text.find('/');
+    return std::stod(ref->text.substr(0, slash)) /
+           std::stod(ref->text.substr(slash + 1));
+  }
+  throw Error("numeric compare expected numeric atom");
+}
+
+void collect_numeric_symbols(Ref ref, std::set<std::string>& out) {
+  if (!ref) {
+    return;
+  }
+  if (ref->tag == Tag::Sym) {
+    if (ref->text != "pi" && ref->text != "e") {
+      out.insert(ref->text);
+    }
+    return;
+  }
+  for (Ref arg : ref->args) {
+    collect_numeric_symbols(arg, out);
+  }
+  for (const auto& attr : ref->attrs) {
+    collect_numeric_symbols(attr.value, out);
+  }
+}
+
+double sample_value(int sample, int var_index) {
+  int raw = ((sample + 1) * (var_index + 3) * 37) % 2001;
+  double value = static_cast<double>(raw) / 1000.0 - 1.0;
+  if (std::abs(value) < 1e-12) {
+    value = 0.125 * (var_index + 1);
+  }
+  return value;
+}
+
+std::string format_double(double value) {
+  std::ostringstream out;
+  out.precision(12);
+  out << value;
+  return out.str();
+}
+
+double eval_numeric_compare(Ref ref,
+                            const std::unordered_map<std::string, double>& env) {
+  if (ref->tag == Tag::Int || ref->tag == Tag::Real || ref->tag == Tag::Rat) {
+    return numeric_atom(ref);
+  }
+  if (ref->tag == Tag::Sym) {
+    if (ref->text == "pi") {
+      return 3.14159265358979323846;
+    }
+    if (ref->text == "e") {
+      return 2.71828182845904523536;
+    }
+    auto it = env.find(ref->text);
+    if (it == env.end()) {
+      throw Error("numeric compare unbound symbol: " + ref->text);
+    }
+    return it->second;
+  }
+  if (ref->tag != Tag::Compound || !ref->attrs.empty()) {
+    throw Error("numeric compare cannot evaluate: " + print_sympy_prec(ref, 0));
+  }
+  if (ref->text == "neg" && ref->args.size() == 1) {
+    return -eval_numeric_compare(ref->args[0], env);
+  }
+  if ((ref->text == "+" || ref->text == "-" || ref->text == "*" ||
+       ref->text == "/" || ref->text == "^") &&
+      ref->args.size() == 2) {
+    double lhs = eval_numeric_compare(ref->args[0], env);
+    double rhs = eval_numeric_compare(ref->args[1], env);
+    if (ref->text == "+") {
+      return lhs + rhs;
+    }
+    if (ref->text == "-") {
+      return lhs - rhs;
+    }
+    if (ref->text == "*") {
+      return lhs * rhs;
+    }
+    if (ref->text == "/") {
+      return lhs / rhs;
+    }
+    return std::pow(lhs, rhs);
+  }
+  if (ref->args.size() == 1) {
+    double arg = eval_numeric_compare(ref->args[0], env);
+    if (ref->text == "sin") {
+      return std::sin(arg);
+    }
+    if (ref->text == "cos") {
+      return std::cos(arg);
+    }
+    if (ref->text == "tan") {
+      return std::tan(arg);
+    }
+    if (ref->text == "log") {
+      return std::log(arg);
+    }
+    if (ref->text == "sqrt") {
+      return std::sqrt(arg);
+    }
+    if (ref->text == "exp") {
+      return std::exp(arg);
+    }
+  }
+  throw Error("numeric compare cannot evaluate head: " + ref->text);
+}
+
 } // namespace
 
 Ref read_sympy_srepr(Arena& arena, const std::string& input) {
@@ -842,6 +1016,61 @@ CompareResult compare(Arena& arena, Ref lhs, Ref rhs, const std::string& by) {
       result.strength = "transformer";
       result.detail = "sympy_unavailable";
     }
+    return result;
+  }
+  if (by == "numeric" || starts_with(by, "numeric(")) {
+    NumericOptions options = parse_numeric_options(by);
+    result.by = "numeric";
+    result.strength = "evidence";
+    result.samples = options.samples;
+    result.tol = options.tol;
+    std::set<std::string> symbols;
+    collect_numeric_symbols(lhs, symbols);
+    collect_numeric_symbols(rhs, symbols);
+    std::vector<std::string> vars(symbols.begin(), symbols.end());
+    int finite_samples = 0;
+    try {
+      for (int sample = 0; sample < options.samples; ++sample) {
+        std::unordered_map<std::string, double> env;
+        for (std::size_t i = 0; i < vars.size(); ++i) {
+          env.emplace(vars[i], sample_value(sample, static_cast<int>(i)));
+        }
+        double lhs_value = eval_numeric_compare(lhs, env);
+        double rhs_value = eval_numeric_compare(rhs, env);
+        if (!std::isfinite(lhs_value) || !std::isfinite(rhs_value)) {
+          continue;
+        }
+        ++finite_samples;
+        if (std::abs(lhs_value - rhs_value) > options.tol) {
+          std::ostringstream witness;
+          witness << "sample=" << sample;
+          for (const auto& var : vars) {
+            witness << "," << var << "=" << format_double(env[var]);
+          }
+          witness << ",lhs=" << format_double(lhs_value)
+                  << ",rhs=" << format_double(rhs_value);
+          result.agreement = false;
+          result.status = "Fail";
+          result.detail = "numeric_witness";
+          result.witness = witness.str();
+          return result;
+        }
+      }
+    } catch (const Error& error) {
+      result.agreement = false;
+      result.status = "Unknown";
+      result.detail = error.what();
+      return result;
+    }
+    if (finite_samples == 0) {
+      result.agreement = false;
+      result.status = "Unknown";
+      result.detail = "numeric_no_finite_samples";
+      return result;
+    }
+    result.agreement = true;
+    result.status = "Ok";
+    result.detail = "numeric_samples";
     return result;
   }
   throw Error("unknown compare mode: " + by);

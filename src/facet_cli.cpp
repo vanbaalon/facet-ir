@@ -18,7 +18,7 @@ std::string option_value(const std::string& arg, const std::string& key) {
 void usage() {
   std::cerr << "usage: facet read=<surface|strict|core|object|sympy-srepr> "
                "emit=<surface|strict|core|object|latex|render:svg|coverage:K|source:sympy|source:sympy-srepr|source:sympy-core|sympy|sympy-srepr|sympy-core> "
-               "[compare=EXPR] [by=<structural|simplify>] < input\n";
+               "[compare=EXPR] [by=<structural|simplify|numeric|numeric(samples=N,tol=E)>] < input\n";
 }
 
 std::string format_coverage(const facet::Coverage& coverage) {
@@ -33,8 +33,17 @@ std::string format_coverage(const facet::Coverage& coverage) {
 }
 
 std::string format_compare(const facet::CompareResult& result) {
-  return "agreement: " + result.status + "[by=" + result.by +
-         ", strength=" + result.strength + ", detail=" + result.detail + "]";
+  std::ostringstream out;
+  out << "agreement: " << result.status << "[by=" << result.by
+      << ", strength=" << result.strength << ", detail=" << result.detail;
+  if (result.by == "numeric") {
+    out << ", tol=" << result.tol << ", samples=" << result.samples;
+  }
+  if (!result.witness.empty()) {
+    out << ", witness=" << result.witness;
+  }
+  out << "]";
+  return out.str();
 }
 
 } // namespace

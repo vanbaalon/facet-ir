@@ -35,6 +35,12 @@ expect "structural compare CLI" 'x + 1' 'compare=x + 1' by=structural
 EXPECT='agreement: Ok[by=simplify, strength=transformer, detail=same_tree_precheck]'
 expect "simplify compare CLI" 'x + x' 'compare=x + x' by=simplify
 
+EXPECT='agreement: Ok[by=numeric, strength=evidence, detail=numeric_samples, tol=0, samples=3]'
+expect "numeric compare CLI" 'x + 1' 'compare=x + 1' 'by=numeric(samples=3,tol=0)'
+
+EXPECT='agreement: Fail[by=numeric, strength=evidence, detail=numeric_witness, tol=0, samples=2, witness=sample=0,x=-0.889,lhs=0.111,rhs=1.111]'
+expect "numeric compare witness CLI" 'x + 1' 'compare=x + 2' 'by=numeric(samples=2,tol=0)'
+
 EXPECT='(do (while (> x 0) (do (assign x (- x 1)))) (return x))'
 expect "layout do CLI" 'do:
     while x > 0:

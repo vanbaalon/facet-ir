@@ -51,6 +51,9 @@ struct CompareResult {
   std::string by;
   std::string strength;
   std::string detail;
+  int samples = 0;
+  double tol = 0.0;
+  std::string witness;
   bool agreement = false;
 };
 

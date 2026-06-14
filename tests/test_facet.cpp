@@ -576,11 +576,41 @@ void compare_modes() {
   check_eq(simplified.strength, "transformer", "simplify compare strength");
   check_eq(simplified.detail, "same_tree_precheck", "simplify compare detail");
 
+  CompareResult numeric_same =
+      compare(arena, read_surface(arena, "sin(x)^2 + cos(x)^2"),
+              read_surface(arena, "1"), "numeric(samples=12,tol=1e-9)");
+  check(numeric_same.agreement, "numeric compare accepts sampled identity");
+  check_eq(numeric_same.status, "Ok", "numeric compare labels agreement");
+  check_eq(numeric_same.by, "numeric", "numeric compare normalizes by label");
+  check_eq(numeric_same.strength, "evidence", "numeric compare strength");
+  check_eq(std::to_string(numeric_same.samples), "12",
+           "numeric compare records samples");
+
+  CompareResult numeric_diff =
+      compare(arena, read_surface(arena, "x + 1"), read_surface(arena, "x + 2"),
+              "numeric(samples=5,tol=1e-12)");
+  check(!numeric_diff.agreement, "numeric compare rejects sampled difference");
+  check_eq(numeric_diff.status, "Fail", "numeric compare labels difference");
+  check_eq(numeric_diff.detail, "numeric_witness",
+           "numeric compare records witness detail");
+  check(numeric_diff.witness.find("lhs=") != std::string::npos,
+        "numeric compare witness includes lhs");
+  check(numeric_diff.witness.find("rhs=") != std::string::npos,
+        "numeric compare witness includes rhs");
+
   check_throws_contains(
       []() {
         Arena a;
         (void)compare(a, read_surface(a, "x"), read_surface(a, "x"),
-                      "numeric");
+                      "numeric(samples=0)");
+      },
+      "samples must be positive", "compare rejects invalid numeric mode");
+
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)compare(a, read_surface(a, "x"), read_surface(a, "x"),
+                      "theory");
       },
       "unknown compare mode", "compare rejects unknown mode");
 }
