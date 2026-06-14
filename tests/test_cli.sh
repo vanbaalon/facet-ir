@@ -25,6 +25,16 @@ expect "source:sympy-srepr read alias" \
 EXPECT='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><circle cx="200" cy="200" r="3" fill="black" /></svg>'
 expect "render svg CLI" 'scene{ point(0, 0) }' emit=render:svg
 
+EXPECT='coverage: 2/3 supported[kernel=sympy]
+unmapped: root.args[1] unknown_fn kernel=sympy'
+expect "coverage CLI" 'sin(x) + unknown_fn(y)' emit=coverage:sympy
+
+EXPECT='agreement: Ok[by=structural, strength=intrinsic, detail=same_tree]'
+expect "structural compare CLI" 'x + 1' 'compare=x + 1' by=structural
+
+EXPECT='agreement: Ok[by=simplify, strength=transformer, detail=same_tree_precheck]'
+expect "simplify compare CLI" 'x + x' 'compare=x + x' by=simplify
+
 EXPECT='(do (while (> x 0) (do (assign x (- x 1)))) (return x))'
 expect "layout do CLI" 'do:
     while x > 0:

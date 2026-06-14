@@ -149,6 +149,8 @@ Implementation note: the initial kernel skeleton uses an internal manifest for S
 3. Add numeric comparison only with explicit `samples` and `tol` in the report.
 4. Gate: agreement reports always include the `by` mode; disagreement reports include the two kernel labels and a witness.
 
+Implementation note: the first compare API returns labelled `CompareResult` data. `by=structural` is intrinsic via `same_tree`; `by=simplify` uses a deterministic same-tree precheck and otherwise routes through the SymPy transformer, returning `Unknown` if the subprocess/backend is unavailable.
+
 ---
 
 ## 2. M1 — Indexing, slicing, dictionaries (no new parser)

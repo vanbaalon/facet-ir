@@ -46,6 +46,14 @@ struct Coverage {
   std::vector<Unmapped> missing;
 };
 
+struct CompareResult {
+  std::string status;
+  std::string by;
+  std::string strength;
+  std::string detail;
+  bool agreement = false;
+};
+
 class Arena {
 public:
   Ref sym(std::string name);
@@ -58,7 +66,7 @@ public:
 
 private:
   std::vector<std::unique_ptr<Node>> nodes_;
-  std::unordered_map<std::string, Ref> index_;
+  std::unordered_map<std::uint64_t, std::vector<Ref>> index_;
 
   Ref intern(Node node);
 };
@@ -86,6 +94,7 @@ std::string print_sympy(Ref ref);
 std::string print_sympy_srepr(Ref ref);
 Ref evaluate_sympy(Arena& arena, Ref ref);
 Coverage coverage(Ref ref, const std::string& kernel);
+CompareResult compare(Arena& arena, Ref lhs, Ref rhs, const std::string& by);
 
 std::vector<Diagnostic> validate(Ref ref);
 std::string render_svg(Ref ref);

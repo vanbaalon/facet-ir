@@ -226,10 +226,65 @@ private:
   }
 };
 
+std::vector<internal::Tok> lex_surface_tokens(std::string input) {
+  Lexer lex(std::move(input));
+  std::vector<internal::Tok> toks;
+  while (!lex.peek().eof) {
+    toks.push_back(lex.peek());
+    lex.expect();
+  }
+  toks.push_back(lex.peek());
+  return toks;
+}
+
+class TokenCursor {
+public:
+  explicit TokenCursor(std::vector<internal::Tok> toks)
+      : toks_(std::move(toks)) {}
+
+  const internal::Tok& peek() const { return toks_[pos_]; }
+
+  bool at(const std::string& text) const { return peek().text == text; }
+
+  bool take(const std::string& text) {
+    if (!at(text)) {
+      return false;
+    }
+    ++pos_;
+    return true;
+  }
+
+  std::string expect() {
+    if (peek().eof) {
+      throw Error("unexpected end of input at " + location());
+    }
+    return toks_[pos_++].text;
+  }
+
+  void expect(const std::string& text) {
+    if (!take(text)) {
+      throw Error("expected '" + text + "' at " + location() + ", got '" +
+                  peek().text + "'");
+    }
+  }
+
+private:
+  std::vector<internal::Tok> toks_;
+  std::size_t pos_ = 0;
+
+  std::string location() const {
+    return "line " + std::to_string(peek().line) + ", column " +
+           std::to_string(peek().column);
+  }
+};
+
 class SurfaceParser {
 public:
   SurfaceParser(Arena& arena, std::string input)
-      : arena_(arena), lex_(std::move(input)) {}
+      : arena_(arena), lex_(lex_surface_tokens(std::move(input))) {}
+
+  SurfaceParser(Arena& arena, std::vector<internal::Tok> toks)
+      : arena_(arena), lex_(std::move(toks)) {}
 
   Ref parse() {
     if (lex_.at("rule")) {
@@ -249,7 +304,7 @@ public:
 
 private:
   Arena& arena_;
-  Lexer lex_;
+  TokenCursor lex_;
 
   Ref expr(int min_prec) {
     Ref lhs = primary();
@@ -489,13 +544,21 @@ private:
     }
     std::vector<Ref> args;
     args.reserve(ref->args.size());
+    bool changed = false;
     for (Ref arg : ref->args) {
-      args.push_back(rewrite_end(arg, target, axis));
+      Ref rewritten = rewrite_end(arg, target, axis);
+      changed = changed || rewritten != arg;
+      args.push_back(rewritten);
     }
     std::vector<Attr> attrs;
     attrs.reserve(ref->attrs.size());
     for (const auto& attr : ref->attrs) {
-      attrs.push_back({attr.key, rewrite_end(attr.value, target, axis)});
+      Ref rewritten = rewrite_end(attr.value, target, axis);
+      changed = changed || rewritten != attr.value;
+      attrs.push_back({attr.key, rewritten});
+    }
+    if (!changed) {
+      return ref;
     }
     return arena_.compound(ref->text, std::move(args), std::move(attrs));
   }
@@ -581,7 +644,7 @@ private:
     }
     if (ref->tag == Tag::Compound && ref->text == "meta") {
       for (Ref seen : out) {
-        if (same_tree(seen, ref)) {
+        if (seen == ref) {
           return;
         }
       }
@@ -731,18 +794,21 @@ private:
   }
 
   Ref expression_until(const std::string& delimiter) {
-    std::vector<std::string> parts;
+    std::vector<internal::Tok> parts;
     while (pos_ < toks_.size() && !at(delimiter)) {
       if (at("INDENT") || at("DEDENT")) {
         throw Error("expected expression before " + toks_[pos_].text +
                     " at " + location());
       }
-      parts.push_back(expect());
+      const auto& tok = toks_[pos_++];
+      parts.push_back({tok.text, false, tok.line, tok.column});
     }
     if (parts.empty()) {
       throw Error("expected expression at " + location());
     }
-    return SurfaceParser(arena_, join(parts, " ")).parse();
+    const auto& eof = parts.back();
+    parts.push_back({"", true, eof.line, eof.column + eof.text.size()});
+    return SurfaceParser(arena_, std::move(parts)).parse();
   }
 };
 

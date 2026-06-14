@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <iterator>
+#include <sstream>
 #include <string>
 
 namespace {
@@ -16,7 +17,24 @@ std::string option_value(const std::string& arg, const std::string& key) {
 
 void usage() {
   std::cerr << "usage: facet read=<surface|strict|core|object|sympy-srepr> "
-               "emit=<surface|strict|core|object|latex|render:svg|source:sympy|source:sympy-srepr|source:sympy-core|sympy|sympy-srepr|sympy-core> < input\n";
+               "emit=<surface|strict|core|object|latex|render:svg|coverage:K|source:sympy|source:sympy-srepr|source:sympy-core|sympy|sympy-srepr|sympy-core> "
+               "[compare=EXPR] [by=<structural|simplify>] < input\n";
+}
+
+std::string format_coverage(const facet::Coverage& coverage) {
+  std::ostringstream out;
+  out << "coverage: " << coverage.supported << "/" << coverage.total
+      << " supported[kernel=" << coverage.kernel << "]";
+  for (const auto& missing : coverage.missing) {
+    out << "\nunmapped: " << missing.path << " " << missing.head
+        << " kernel=" << missing.kernel;
+  }
+  return out.str();
+}
+
+std::string format_compare(const facet::CompareResult& result) {
+  return "agreement: " + result.status + "[by=" + result.by +
+         ", strength=" + result.strength + ", detail=" + result.detail + "]";
 }
 
 } // namespace
@@ -24,12 +42,18 @@ void usage() {
 int main(int argc, char** argv) {
   std::string read = "surface";
   std::string emit = "core";
+  std::string compare_expr;
+  std::string compare_by = "structural";
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (auto value = option_value(arg, "read"); !value.empty()) {
       read = value;
     } else if (auto value = option_value(arg, "emit"); !value.empty()) {
       emit = value;
+    } else if (auto value = option_value(arg, "compare"); !value.empty()) {
+      compare_expr = value;
+    } else if (auto value = option_value(arg, "by"); !value.empty()) {
+      compare_by = value;
     } else {
       usage();
       return 2;
@@ -64,6 +88,24 @@ int main(int argc, char** argv) {
       }
     }
 
+    if (!compare_expr.empty()) {
+      facet::Ref rhs = nullptr;
+      if (read == "surface") {
+        rhs = facet::read_surface(arena, compare_expr);
+      } else if (read == "strict") {
+        rhs = facet::read_strict(arena, compare_expr);
+      } else if (read == "core") {
+        rhs = facet::read_core(arena, compare_expr);
+      } else if (read == "object") {
+        rhs = facet::read_object(arena, compare_expr);
+      } else {
+        throw facet::Error("compare is not available for read mode: " + read);
+      }
+      std::cout << format_compare(facet::compare(arena, expr, rhs, compare_by))
+                << "\n";
+      return 0;
+    }
+
     if (emit == "surface") {
       std::cout << facet::print_surface(expr) << "\n";
     } else if (emit == "strict") {
@@ -76,6 +118,9 @@ int main(int argc, char** argv) {
       std::cout << facet::print_latex(expr) << "\n";
     } else if (emit == "render:svg") {
       std::cout << facet::render_svg(expr) << "\n";
+    } else if (emit.rfind("coverage:", 0) == 0) {
+      std::cout << format_coverage(facet::coverage(expr, emit.substr(9)))
+                << "\n";
     } else if (emit == "sympy" || emit == "source:sympy") {
       std::cout << facet::print_sympy(expr) << "\n";
     } else if (emit == "sympy-srepr" || emit == "source:sympy-srepr") {

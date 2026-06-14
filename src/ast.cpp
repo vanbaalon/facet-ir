@@ -23,27 +23,6 @@ std::uint64_t hash_string(const std::string& s) {
   return h;
 }
 
-std::string key_of(const Node& node) {
-  std::string out;
-  out.reserve(node.text.size() + node.args.size() * 24 + node.attrs.size() * 32 + 16);
-  out += std::to_string(static_cast<int>(node.tag));
-  out += ':';
-  out += node.text;
-  out += '(';
-  for (Ref arg : node.args) {
-    out += std::to_string(arg->hash);
-    out += ',';
-  }
-  out += ')';
-  for (const auto& attr : node.attrs) {
-    out += ':';
-    out += attr.key;
-    out += '=';
-    out += std::to_string(attr.value->hash);
-  }
-  return out;
-}
-
 bool decimal_digits(const std::string& s) {
   std::size_t start = (!s.empty() && s.front() == '-') ? 1 : 0;
   return start < s.size() &&
@@ -131,13 +110,15 @@ Ref Arena::intern(Node node) {
     hash_mix(h, attr.value->hash);
   }
   node.hash = h;
-  std::string key = key_of(node);
-  if (auto found = index_.find(key); found != index_.end()) {
-    return found->second;
+  auto& bucket = index_[node.hash];
+  for (Ref candidate : bucket) {
+    if (same_tree(candidate, &node)) {
+      return candidate;
+    }
   }
   nodes_.push_back(std::make_unique<Node>(std::move(node)));
   Ref ref = nodes_.back().get();
-  index_.emplace(std::move(key), ref);
+  bucket.push_back(ref);
   return ref;
 }
 
@@ -145,7 +126,10 @@ bool same_tree(Ref lhs, Ref rhs) {
   if (lhs == rhs) {
     return true;
   }
-  if (!lhs || !rhs || lhs->tag != rhs->tag || lhs->text != rhs->text ||
+  if (!lhs || !rhs || lhs->hash != rhs->hash) {
+    return false;
+  }
+  if (lhs->tag != rhs->tag || lhs->text != rhs->text ||
       lhs->args.size() != rhs->args.size() ||
       lhs->attrs.size() != rhs->attrs.size()) {
     return false;
@@ -168,6 +152,7 @@ namespace internal {
 
 std::string escape(const std::string& s) {
   std::string out;
+  out.reserve(s.size());
   for (unsigned char c : s) {
     switch (c) {
     case '\\':
@@ -269,10 +254,13 @@ Ref surface_atom_from_token(Arena& arena, const std::string& token) {
 }
 
 Ref attr_value(Ref ref, const std::string& key) {
-  for (const auto& attr : ref->attrs) {
-    if (attr.key == key) {
-      return attr.value;
-    }
+  auto it = std::lower_bound(
+      ref->attrs.begin(), ref->attrs.end(), key,
+      [](const Attr& attr, const std::string& needle) {
+        return attr.key < needle;
+      });
+  if (it != ref->attrs.end() && it->key == key) {
+    return it->value;
   }
   return nullptr;
 }
@@ -286,6 +274,12 @@ std::string print_atom(Ref ref) {
 
 std::string join(const std::vector<std::string>& parts, const std::string& sep) {
   std::string out;
+  std::size_t total =
+      parts.empty() ? 0 : sep.size() * (parts.size() - 1);
+  for (const auto& part : parts) {
+    total += part.size();
+  }
+  out.reserve(total);
   for (std::size_t i = 0; i < parts.size(); ++i) {
     if (i) {
       out += sep;

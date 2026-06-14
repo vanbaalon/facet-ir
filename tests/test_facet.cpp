@@ -404,12 +404,16 @@ void surface_examples() {
   check_eq(print_surface(goal),
            "goal g: exists[?F : Smooth](int[x : 0..1](?F) = pi / 4)",
            "surface goal wrapper");
+  check(same_tree(goal, read_surface(arena, print_surface(goal))),
+        "surface goal round-trip");
 
   Ref rule = read_surface(
       arena, "rule pyth: sin(?a)^2 + cos(?a)^2 ~> 1 when ?a > 0");
   check_eq(print_surface(rule),
            "rule pyth: sin(?a) ^ 2 + cos(?a) ^ 2 ~> 1 when ?a > 0",
            "surface rule wrapper with guard");
+  check(same_tree(rule, read_surface(arena, print_surface(rule))),
+        "surface rule round-trip");
 }
 
 void latex_examples() {
@@ -455,14 +459,15 @@ void sympy_examples() {
         (void)print_sympy(read_surface(
             a, "rule pyth: sin(?a)^2 + cos(?a)^2 ~> 1 when ?a > 0"));
       },
-      "SymPy emit does not support rule", "sympy rejects rules");
+      "unmapped head at root: rule", "sympy rejects rules with path");
   check_throws_contains(
       []() {
         Arena a;
         (void)print_sympy(
             read_surface(a, "simplify(sqrt(x^2)) @ assume(x >= 0)"));
       },
-      "attributed expression", "sympy rejects attributed expressions");
+      "unmapped head at root: simplify:attrs",
+      "sympy rejects attributed expressions with path");
 
   check_eq(print_core(read_sympy_srepr(
                arena, "Integral(sin(Mul(pi, Symbol('x'))), "
@@ -546,6 +551,38 @@ void kernel_mapping_and_coverage() {
         (void)coverage(read_surface(a, "x + 1"), "missing_kernel");
       },
       "unknown kernel", "coverage rejects unknown kernel");
+}
+
+void compare_modes() {
+  Arena arena;
+
+  CompareResult same =
+      compare(arena, read_surface(arena, "x + 1"), read_core(arena, "(+ x 1)"),
+              "structural");
+  check(same.agreement, "structural compare accepts same tree");
+  check_eq(same.status, "Ok", "structural compare labels agreement");
+  check_eq(same.strength, "intrinsic", "structural compare strength");
+
+  CompareResult different =
+      compare(arena, read_surface(arena, "x + 1"), read_surface(arena, "1 + x"),
+              "structural");
+  check(!different.agreement, "structural compare rejects different tree");
+  check_eq(different.status, "Fail", "structural compare labels difference");
+
+  CompareResult simplified =
+      compare(arena, read_surface(arena, "x + x"), read_surface(arena, "x + x"),
+              "simplify");
+  check(simplified.agreement, "simplify compare accepts identical exprs");
+  check_eq(simplified.strength, "transformer", "simplify compare strength");
+  check_eq(simplified.detail, "same_tree_precheck", "simplify compare detail");
+
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)compare(a, read_surface(a, "x"), read_surface(a, "x"),
+                      "numeric");
+      },
+      "unknown compare mode", "compare rejects unknown mode");
 }
 
 void audit_regressions() {
@@ -817,6 +854,13 @@ void minimal_do_blocks() {
   check_throws_contains(
       []() {
         Arena a;
+        (void)read_surface(a, "do:\n    return x +\n");
+      },
+      "line 2", "do block expression errors keep source line");
+
+  check_throws_contains(
+      []() {
+        Arena a;
         (void)read_strict(a, "do:\n    return x\n");
       },
       "trailing input", "strict rejects layout do block");
@@ -970,6 +1014,120 @@ void plot_svg_renderer() {
       "cannot evaluate symbol", "plot renderer reports unsupported symbols");
 }
 
+void registered_binder_heads() {
+  Arena arena;
+
+  Ref fold_expr = read_surface(arena, "fold[x : 1..n](f(x))");
+  check_eq(print_core(fold_expr), "(fold (binder x (range 1 n)) (f x))",
+           "fold binder lowers correctly");
+  check_eq(print_surface(fold_expr), "fold[x : 1..n](f(x))",
+           "fold binder prints binder syntax");
+  check(same_tree(fold_expr, read_surface(arena, print_surface(fold_expr))),
+        "fold binder round-trip");
+
+  Ref scan_expr = read_surface(arena, "scan[x : 1..n](g(x))");
+  check_eq(print_core(scan_expr), "(scan (binder x (range 1 n)) (g x))",
+           "scan binder lowers correctly");
+  check_eq(print_surface(scan_expr), "scan[x : 1..n](g(x))",
+           "scan binder prints binder syntax");
+  check(same_tree(scan_expr, read_surface(arena, print_surface(scan_expr))),
+        "scan binder round-trip");
+
+  Ref seq_binder = read_surface(arena, "seq[i : 1..n](i^2)");
+  check_eq(print_core(seq_binder), "(seq (binder i (range 1 n)) (^ i 2))",
+           "seq used as binder lowers to binder core");
+  check_eq(print_surface(seq_binder), "seq[i : 1..n](i ^ 2)",
+           "seq binder prints binder syntax");
+  check(same_tree(seq_binder, read_surface(arena, print_surface(seq_binder))),
+        "seq binder round-trip");
+
+  Ref contour_expr = read_surface(arena, "contour[x : 0..1](x^2 + 1)");
+  check_eq(print_core(contour_expr),
+           "(contour (binder x (range 0 1)) (+ (^ x 2) 1))",
+           "contour binder lowers correctly");
+  check_eq(print_surface(contour_expr), "contour[x : 0..1](x ^ 2 + 1)",
+           "contour binder prints binder syntax");
+  check(same_tree(contour_expr,
+                  read_surface(arena, print_surface(contour_expr))),
+        "contour binder round-trip");
+
+  Ref field_expr = read_surface(arena, "field[t : 0..1](cos(t))");
+  check_eq(print_core(field_expr),
+           "(field (binder t (range 0 1)) (cos t))",
+           "field binder lowers correctly");
+  check_eq(print_surface(field_expr), "field[t : 0..1](cos(t))",
+           "field binder prints binder syntax");
+  check(same_tree(field_expr, read_surface(arena, print_surface(field_expr))),
+        "field binder round-trip");
+
+  Ref cplt = read_surface(arena, "complexplot[z : 0..1](z^2)");
+  check_eq(print_core(cplt),
+           "(complexplot (binder z (range 0 1)) (^ z 2))",
+           "complexplot binder lowers correctly");
+  check_eq(print_surface(cplt), "complexplot[z : 0..1](z ^ 2)",
+           "complexplot binder prints binder syntax");
+  check(same_tree(cplt, read_surface(arena, print_surface(cplt))),
+        "complexplot binder round-trip");
+
+  Ref manip = read_surface(arena, "manipulate[t : 0..2](sin(t * x))");
+  check_eq(print_core(manip),
+           "(manipulate (binder t (range 0 2)) (sin (* t x)))",
+           "manipulate binder lowers correctly");
+  check_eq(print_surface(manip), "manipulate[t : 0..2](sin(t * x))",
+           "manipulate binder prints binder syntax");
+  check(same_tree(manip, read_surface(arena, print_surface(manip))),
+        "manipulate binder round-trip");
+}
+
+void extended_coverage_tests() {
+  Arena arena;
+
+  // nested unknown: unknown_fn is inside +, path is root.args[0]
+  Ref nested = read_surface(arena, "unknown_fn(x + 1) + y");
+  Coverage nc = coverage(nested, "sympy");
+  check_eq(std::to_string(nc.total), "3",
+           "coverage counts nested: + at root, unknown_fn, + inside");
+  check_eq(std::to_string(nc.supported), "2",
+           "coverage counts nested: two + supported");
+  check_eq(std::to_string(nc.missing.size()), "1",
+           "coverage nested: one missing head");
+  if (!nc.missing.empty()) {
+    check_eq(nc.missing[0].head, "unknown_fn",
+             "coverage nested: missing head is unknown_fn");
+    check_eq(nc.missing[0].path, "root.args[0]",
+             "coverage nested: missing path is root.args[0]");
+  }
+
+  // attributed expression: simplify(x) :assume condition → reports head:attrs
+  Ref attr_expr = read_core(arena, "(simplify x :assume (>= x 0))");
+  Coverage ac = coverage(attr_expr, "sympy");
+  check_eq(std::to_string(ac.total), "2",
+           "coverage attributed: simplify and >= counted");
+  if (!ac.missing.empty()) {
+    check(ac.missing[0].head.find(":attrs") != std::string::npos,
+          "coverage reports attributed expression as head:attrs");
+  }
+
+  // coverage path for deeply nested unknown
+  Ref deep = read_surface(arena, "(unknown_a(x)) + unknown_b(y)");
+  Coverage dc = coverage(deep, "sympy");
+  bool found_a = false, found_b = false;
+  for (const auto& m : dc.missing) {
+    if (m.head == "unknown_a") {
+      found_a = true;
+      check_eq(m.path, "root.args[0]",
+               "coverage deep: unknown_a path is root.args[0]");
+    }
+    if (m.head == "unknown_b") {
+      found_b = true;
+      check_eq(m.path, "root.args[1]",
+               "coverage deep: unknown_b path is root.args[1]");
+    }
+  }
+  check(found_a, "coverage deep: found unknown_a in missing");
+  check(found_b, "coverage deep: found unknown_b in missing");
+}
+
 void new_feature_regressions() {
   Arena arena;
 
@@ -1045,6 +1203,7 @@ int main() {
   latex_examples();
   sympy_examples();
   kernel_mapping_and_coverage();
+  compare_modes();
   audit_regressions();
   object_round_trips();
   cross_mode_agreement();
@@ -1057,6 +1216,8 @@ int main() {
   graphics_syntax_round_trips();
   primitive_svg_renderer();
   plot_svg_renderer();
+  registered_binder_heads();
+  extended_coverage_tests();
   new_feature_regressions();
 
   if (failures) {

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <map>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -285,14 +286,34 @@ const KernelManifest& kernel_manifest(const std::string& kernel) {
   throw Error("unknown kernel: " + kernel);
 }
 
+std::unordered_map<std::string_view, const KernelMapEntry*>
+build_kernel_index(const KernelManifest& manifest) {
+  std::unordered_map<std::string_view, const KernelMapEntry*> index;
+  index.reserve(manifest.map.size() * 2);
+  for (const auto& entry : manifest.map) {
+    index.emplace(entry.head, &entry);
+  }
+  return index;
+}
+
+const std::unordered_map<std::string_view, const KernelMapEntry*>&
+kernel_index(const KernelManifest& manifest) {
+  if (std::string_view(manifest.name) == "sympy") {
+    static const auto index = build_kernel_index(sympy_manifest());
+    return index;
+  }
+  if (std::string_view(manifest.name) == "stub") {
+    static const auto index = build_kernel_index(stub_manifest());
+    return index;
+  }
+  throw Error("unknown kernel manifest: " + std::string(manifest.name));
+}
+
 const KernelMapEntry* lookup_kernel_entry(const KernelManifest& manifest,
                                           const std::string& head) {
-  for (const auto& entry : manifest.map) {
-    if (head == entry.head) {
-      return &entry;
-    }
-  }
-  return nullptr;
+  const auto& index = kernel_index(manifest);
+  auto it = index.find(head);
+  return it != index.end() ? it->second : nullptr;
 }
 
 std::string shell_quote(const std::string& text) {
@@ -735,6 +756,17 @@ void coverage_walk(Ref ref, const KernelManifest& manifest,
   }
 }
 
+void require_sympy_coverage(Ref ref) {
+  Coverage cov;
+  cov.kernel = sympy_manifest().name;
+  coverage_walk(ref, sympy_manifest(), "root", cov);
+  if (!cov.missing.empty()) {
+    const Unmapped& first = cov.missing.front();
+    throw Error("SymPy emit unmapped head at " + first.path + ": " +
+                first.head);
+  }
+}
+
 } // namespace
 
 Ref read_sympy_srepr(Arena& arena, const std::string& input) {
@@ -763,6 +795,7 @@ Ref evaluate_sympy(Arena& arena, Ref ref) {
 }
 
 std::string print_sympy(Ref ref) {
+  require_sympy_coverage(ref);
   return print_sympy_prec(ref, 0);
 }
 
@@ -772,6 +805,46 @@ Coverage coverage(Ref ref, const std::string& kernel) {
   out.kernel = manifest.name;
   coverage_walk(ref, manifest, "root", out);
   return out;
+}
+
+CompareResult compare(Arena& arena, Ref lhs, Ref rhs, const std::string& by) {
+  CompareResult result;
+  result.by = by;
+  if (by == "structural") {
+    result.agreement = same_tree(lhs, rhs);
+    result.status = result.agreement ? "Ok" : "Fail";
+    result.strength = "intrinsic";
+    result.detail = result.agreement ? "same_tree" : "different_tree";
+    return result;
+  }
+  if (by == "simplify") {
+    if (same_tree(lhs, rhs)) {
+      result.agreement = true;
+      result.status = "Ok";
+      result.strength = "transformer";
+      result.detail = "same_tree_precheck";
+      return result;
+    }
+    try {
+      Ref lhs_eval = evaluate_sympy(arena, lhs);
+      Ref rhs_eval = evaluate_sympy(arena, rhs);
+      result.agreement = same_tree(lhs_eval, rhs_eval);
+      result.status = result.agreement ? "Ok" : "Fail";
+      result.strength = "transformer";
+      result.detail = result.agreement ? "sympy_same_tree" : "sympy_diff_tree";
+    } catch (const Error& error) {
+      std::string message = error.what();
+      if (message.rfind("SymPy subprocess failed:", 0) != 0) {
+        throw;
+      }
+      result.agreement = false;
+      result.status = "Unknown";
+      result.strength = "transformer";
+      result.detail = "sympy_unavailable";
+    }
+    return result;
+  }
+  throw Error("unknown compare mode: " + by);
 }
 
 } // namespace facet
