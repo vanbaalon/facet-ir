@@ -72,6 +72,7 @@ std::string print_latex(Ref ref);
 std::string print_sympy(Ref ref);
 
 std::vector<Diagnostic> validate(Ref ref);
+std::string render_svg(Ref ref);
 bool same_tree(Ref lhs, Ref rhs);
 
 } // namespace facet

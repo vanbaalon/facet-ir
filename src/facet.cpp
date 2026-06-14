@@ -2,6 +2,9 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <cmath>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -1317,6 +1320,123 @@ void validate_walk(Ref ref, std::vector<Diagnostic>& out) {
   }
 }
 
+double render_number(Ref ref) {
+  if (ref->tag == Tag::Int || ref->tag == Tag::Real) {
+    return std::stod(ref->text);
+  }
+  if (ref->tag == Tag::Rat) {
+    std::size_t slash = ref->text.find('/');
+    if (slash == std::string::npos) {
+      throw Error("invalid rational atom in renderer");
+    }
+    return std::stod(ref->text.substr(0, slash)) /
+           std::stod(ref->text.substr(slash + 1));
+  }
+  throw Error("SVG renderer expected numeric atom, got: " + print_core_inner(ref));
+}
+
+std::string svg_num(double value) {
+  if (std::abs(value) < 1e-12) {
+    value = 0.0;
+  }
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(6) << value;
+  std::string text = out.str();
+  while (text.size() > 1 && text.back() == '0') {
+    text.pop_back();
+  }
+  if (!text.empty() && text.back() == '.') {
+    text.pop_back();
+  }
+  return text;
+}
+
+std::string svg_escape(const std::string& text) {
+  std::string out;
+  for (char c : text) {
+    switch (c) {
+    case '&':
+      out += "&amp;";
+      break;
+    case '<':
+      out += "&lt;";
+      break;
+    case '>':
+      out += "&gt;";
+      break;
+    case '"':
+      out += "&quot;";
+      break;
+    default:
+      out.push_back(c);
+      break;
+    }
+  }
+  return out;
+}
+
+struct SvgPoint {
+  double x = 0.0;
+  double y = 0.0;
+};
+
+SvgPoint render_point_arg(Ref ref) {
+  if (ref->tag == Tag::Compound && ref->text == "point" &&
+      ref->args.size() == 2) {
+    return {render_number(ref->args[0]), render_number(ref->args[1])};
+  }
+  throw Error("SVG renderer expected point(x,y), got: " + print_core_inner(ref));
+}
+
+double svg_x(double x) { return 200.0 + x * 20.0; }
+double svg_y(double y) { return 200.0 - y * 20.0; }
+
+std::string render_svg_node(Ref ref) {
+  if (ref->tag != Tag::Compound) {
+    throw Error("SVG renderer expected compound scene node");
+  }
+  if (ref->text == "point" && ref->args.size() == 2) {
+    SvgPoint p = render_point_arg(ref);
+    return "<circle cx=\"" + svg_num(svg_x(p.x)) + "\" cy=\"" +
+           svg_num(svg_y(p.y)) +
+           "\" r=\"3\" fill=\"black\" />";
+  }
+  if (ref->text == "segment" && ref->args.size() == 2) {
+    SvgPoint a = render_point_arg(ref->args[0]);
+    SvgPoint b = render_point_arg(ref->args[1]);
+    return "<line x1=\"" + svg_num(svg_x(a.x)) + "\" y1=\"" +
+           svg_num(svg_y(a.y)) + "\" x2=\"" + svg_num(svg_x(b.x)) +
+           "\" y2=\"" + svg_num(svg_y(b.y)) +
+           "\" stroke=\"black\" stroke-width=\"2\" />";
+  }
+  if (ref->text == "circle" && ref->args.size() == 2) {
+    SvgPoint center = render_point_arg(ref->args[0]);
+    double radius = render_number(ref->args[1]);
+    return "<circle cx=\"" + svg_num(svg_x(center.x)) + "\" cy=\"" +
+           svg_num(svg_y(center.y)) + "\" r=\"" + svg_num(radius * 20.0) +
+           "\" fill=\"none\" stroke=\"black\" stroke-width=\"2\" />";
+  }
+  if (ref->text == "text" && ref->args.size() == 2 &&
+      ref->args[1]->tag == Tag::Str) {
+    SvgPoint p = render_point_arg(ref->args[0]);
+    return "<text x=\"" + svg_num(svg_x(p.x)) + "\" y=\"" +
+           svg_num(svg_y(p.y)) +
+           "\" font-size=\"14\" text-anchor=\"middle\">" +
+           svg_escape(ref->args[1]->text) + "</text>";
+  }
+  throw Error("SVG renderer does not support scene primitive: " + ref->text);
+}
+
+std::string render_svg_scene(Ref ref) {
+  std::string out =
+      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 400 400\">";
+  for (Ref arg : ref->args) {
+    out += render_svg_node(arg);
+  }
+  out += "</svg>";
+  return out;
+}
+
 class JsonParser {
 public:
   JsonParser(Arena& arena, std::string input)
@@ -1672,6 +1792,13 @@ std::vector<Diagnostic> validate(Ref ref) {
   std::vector<Diagnostic> out;
   validate_walk(ref, out);
   return out;
+}
+
+std::string render_svg(Ref ref) {
+  if (ref->tag == Tag::Compound && ref->text == "scene") {
+    return render_svg_scene(ref);
+  }
+  throw Error("SVG renderer expected scene, got: " + print_core(ref));
 }
 
 } // namespace facet

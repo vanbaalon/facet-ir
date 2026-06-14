@@ -74,6 +74,8 @@ int main(int argc, char** argv) {
       std::cout << facet::print_object(expr) << "\n";
     } else if (emit == "latex") {
       std::cout << facet::print_latex(expr) << "\n";
+    } else if (emit == "render:svg") {
+      std::cout << facet::render_svg(expr) << "\n";
     } else if (emit == "sympy") {
       std::cout << facet::print_sympy(expr) << "\n";
     } else {

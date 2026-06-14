@@ -867,6 +867,33 @@ void graphics_syntax_round_trips() {
         "surface graphics contexts round-trip");
 }
 
+void primitive_svg_renderer() {
+  Arena arena;
+  Ref scene = read_surface(
+      arena,
+      "scene{ point(0, 0), segment(point(-1, 0), point(1, 0)), "
+      "circle(point(0, 0), 1), text(point(0, 1), \"n\") }");
+  check_eq(
+      render_svg(scene),
+      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 400 400\">"
+      "<circle cx=\"200\" cy=\"200\" r=\"3\" fill=\"black\" />"
+      "<line x1=\"180\" y1=\"200\" x2=\"220\" y2=\"200\" stroke=\"black\" "
+      "stroke-width=\"2\" />"
+      "<circle cx=\"200\" cy=\"200\" r=\"20\" fill=\"none\" stroke=\"black\" "
+      "stroke-width=\"2\" />"
+      "<text x=\"200\" y=\"180\" font-size=\"14\" "
+      "text-anchor=\"middle\">n</text></svg>",
+      "primitive scene renders deterministic SVG");
+
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)render_svg(read_surface(a, "scene{ polygon(point(0, 0)) }"));
+      },
+      "does not support scene primitive",
+      "primitive renderer reports unsupported heads");
+}
+
 void new_feature_regressions() {
   Arena arena;
 
@@ -951,6 +978,7 @@ int main() {
   minimal_do_blocks();
   loop_and_branch_blocks();
   graphics_syntax_round_trips();
+  primitive_svg_renderer();
   new_feature_regressions();
 
   if (failures) {
