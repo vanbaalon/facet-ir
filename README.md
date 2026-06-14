@@ -26,7 +26,11 @@ FacetIR is a C++ library and CLI tool that provides a single abstract syntax tre
 make
 ```
 
-The build produces the `facet` CLI binary. CMake is used internally; the `Makefile` wraps the standard configure-and-build sequence.
+The build produces `build/facet` (CLI) and `build/test_facet` (test suite). Requires a C++20-capable compiler (`c++` on `$PATH`). Run the tests with:
+
+```sh
+make test
+```
 
 ### CLI Usage
 

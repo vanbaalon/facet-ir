@@ -290,10 +290,10 @@ LaTeX:    \prod_{x = 1}^{n} x
 Surface:  diff[x](sin(x))
 Strict:   diff(sin(x), x)
 Core:     (diff (sin x) x)
-LaTeX:    \frac{d}{dx} \sin\left(x\right)
+LaTeX:    \frac{d^{}}{dx} \sin\left(x\right)
 ```
 
-`diff[v1, ...](body)` lowers to `(diff body v1 ...)`: the body is the first argument, variables follow.
+`diff[v1, ...](body)` lowers to `(diff body v1 ...)`: the body is the first argument, variables follow. The LaTeX numerator always carries one empty superscript `^{}` per differentiation variable.
 
 ### 3.7 Derivative — Repeated Variable (Second Order)
 
@@ -306,7 +306,7 @@ Core:     (diff (sin x) x x)
 LaTeX:    \frac{d^{}^{}}{dxdx} \sin\left(x\right)
 ```
 
-One `^{}` is added to the `d` for each variable beyond the first.
+Two variables → two `^{}` in the numerator. (See §9.6 of the spec for the general rule.)
 
 ### 3.8 Mixed Partial Derivative
 
@@ -430,8 +430,10 @@ LaTeX:    f \sim g
 Surface:  { 1, 2, 3 }
 Strict:   set(1, 2, 3)
 Core:     (set 1 2 3)
-LaTeX:    \left\{ 1, 2, 3 \right\}
+LaTeX:    \operatorname{set}\left(1, 2, 3\right)
 ```
+
+The `set` compound has no dedicated LaTeX rule; it falls through to the generic fallback. Use `setbuild` (§5.3–5.6) when display-quality LaTeX braces are needed.
 
 ### 5.2 Set Literal with Expressions
 
@@ -439,7 +441,7 @@ LaTeX:    \left\{ 1, 2, 3 \right\}
 Surface:  { x ^ 2, x ^ 3 }
 Strict:   set(^(x, 2), ^(x, 3))
 Core:     (set (^ x 2) (^ x 3))
-LaTeX:    \left\{ x^{2}, x^{3} \right\}
+LaTeX:    \operatorname{set}\left(x^{2}, x^{3}\right)
 ```
 
 ### 5.3 Set-Builder Without Condition

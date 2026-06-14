@@ -217,17 +217,19 @@ Unary negation (prefix `-`) is parsed inside `primary()` at the highest preceden
 ```
 <primary> ::= <atom>
             | '(' <expr> ')'
-            | '-' <primary>                       -- unary negation → (neg <primary>)
-            | '{' <set-body> '}'                  -- set literal or set-builder
-            | '?' <ident-name> <meta-suffix>?     -- meta variable
-            | <ident> <call-suffix>?              -- identifier, possibly subscripted
-            | <ident> '[' <binder-args> ']' '(' <expr> ')'   -- binder form
-            | <ident> '(' <args> ')'              -- function call
-            | <ident> '{' <args> '}'              -- alternative call syntax
-            | <expr> '.(' <args> ')'              -- broadcast application
+            | '-' <primary>                                       -- unary negation → (neg <primary>)
+            | '{' <set-body> '}'                                  -- set literal or set-builder
+            | <ident> '.(' <args> ')'                             -- broadcast: only after bare ident token
+            | <ident> '[' 'diff' <diff-vars> ']' '(' <expr> ')' -- differentiation
+            | <ident> '[' <binder-var> <binder-sep> <expr> ']' '(' <expr> ')'  -- binder form
+            | <ident> '(' <args> ')'                              -- function call
+            | <ident> '{' <args> '}'                              -- alternative call syntax
+            | <ident>                                             -- atom or subscript shorthand
 
 <atom>    ::= <int> | <real> | <str>
 ```
+
+The `.(` token is recognised as a single lexeme (see §4.7). Broadcast is only supported when the receiver is a bare identifier token; it is not available after an arbitrary sub-expression.
 
 ### 5.4 Special Forms
 
@@ -254,7 +256,7 @@ op[var : domain](body)          →   (op (binder var domain) body)
 op[var -> target](body)         →   (op (binder var (approach target)) body)
 ```
 
-The `->` inside `[...]` triggers the approach form. Multiple comma-separated binder variables are allowed where the operator supports them.
+The `->` inside `[...]` triggers the approach form. Each binder form binds exactly one variable; `diff` is the only form that accepts multiple comma-separated variables (see §5.4.4).
 
 #### 5.4.4 Differentiation
 
@@ -543,22 +545,25 @@ Notes:
 
 ### 9.5 Set Forms
 
+The LaTeX projection has explicit handling only for `setbuild`. The `set` compound (a literal enumerated set) has no special LaTeX rule and falls through to the generic compound fallback (§9.11), producing `\operatorname{set}\left(e1, e2, \ldots\right)`.
+
 | Core form                                         | LaTeX output                                                      |
 |---------------------------------------------------|-------------------------------------------------------------------|
-| `(set e1 e2 ...)`                                | `\left\{ e1, e2, \ldots \right\}`                                 |
+| `(set e1 e2 ...)`                                | `\operatorname{set}\left(e1, e2, \ldots\right)` *(generic fallback)* |
 | `(setbuild expr (binder x D))`                   | `\left\{ expr \mid x \in D \right\}`                              |
-| `(setbuild expr (binder x (range a b)) :when c)` | `\left\{ expr \mid x = a,\ldots,b,\; c \right\}` (range domain)  |
+| `(setbuild expr (binder x (range a b)))`         | `\left\{ expr \mid x = a,\ldots,b \right\}`                       |
 | `(setbuild expr (binder x D) :when c)`           | `\left\{ expr \mid x \in D,\; c \right\}`                         |
+| `(setbuild expr (binder x (range a b)) :when c)` | `\left\{ expr \mid x = a,\ldots,b,\; c \right\}`                  |
 
 ### 9.6 Differentiation
 
 ```
-(diff body v1)           →   \frac{d}{dv1} body
+(diff body v1)           →   \frac{d^{}}{dv1} body
 (diff body v1 v2)        →   \frac{d^{}^{}}{dv1 dv2} body
 (diff body v1 v2 v3)     →   \frac{d^{}^{}^{}}{dv1 dv2 dv3} body
 ```
 
-One `^{}` is appended to the `d` for each variable beyond the first.
+One empty superscript `^{}` is emitted for each differentiation variable. The numerator `d` is always followed by at least one `^{}` even for a single-variable derivative. Note: this produces syntactically valid but typographically raw LaTeX; a rendering pass (e.g. KaTeX) will show the empty superscripts as small raised boxes rather than a conventional `d²` notation.
 
 ### 9.7 Index Expressions
 
