@@ -444,15 +444,6 @@ private:
 
 std::string print_surface_prec(Ref ref, int parent_prec);
 
-std::vector<std::string> printed_args(Ref ref,
-                                      std::string (*printer)(Ref)) {
-  std::vector<std::string> parts;
-  for (Ref arg : ref->args) {
-    parts.push_back(printer(arg));
-  }
-  return parts;
-}
-
 std::string print_core_inner(Ref ref) {
   if (ref->tag != Tag::Compound) {
     return print_atom(ref);
@@ -615,43 +606,146 @@ std::string print_surface_prec(Ref ref, int parent_prec) {
   return out;
 }
 
-std::string print_latex_inner(Ref ref) {
-  if (ref->tag != Tag::Compound) {
-    if (ref->text == "pi") {
-      return "\\pi";
+std::string print_latex_prec(Ref ref, int parent_prec);
+
+std::string latex_atom(Ref ref) {
+  static const std::vector<std::pair<std::string, std::string>> symbols = {
+      {"pi", "\\pi"},       {"alpha", "\\alpha"}, {"beta", "\\beta"},
+      {"gamma", "\\gamma"}, {"delta", "\\delta"}, {"epsilon", "\\epsilon"},
+      {"theta", "\\theta"}, {"lambda", "\\lambda"}, {"mu", "\\mu"},
+      {"nu", "\\nu"},       {"sigma", "\\sigma"}, {"omega", "\\omega"}};
+  for (const auto& symbol : symbols) {
+    if (ref->text == symbol.first) {
+      return symbol.second;
     }
-    return ref->text;
+  }
+  return ref->text;
+}
+
+std::string latex_wrap(std::string out, int prec, int parent_prec) {
+  if (prec < parent_prec) {
+    return "\\left(" + out + "\\right)";
+  }
+  return out;
+}
+
+std::string latex_attrs(Ref ref) {
+  if (ref->attrs.empty()) {
+    return "";
+  }
+  std::vector<std::string> parts;
+  for (const auto& attr : ref->attrs) {
+    parts.push_back("\\operatorname{" + attr.key + "}=" +
+                    print_latex_prec(attr.value, 0));
+  }
+  return "\\;_{[" + join(parts, ", ") + "]}";
+}
+
+std::string latex_binder(Ref binder) {
+  if (binder->tag != Tag::Compound || binder->text != "binder" ||
+      binder->args.size() != 2) {
+    throw Error("expected binder node");
+  }
+  Ref domain = binder->args[1];
+  if (domain->tag == Tag::Compound && domain->text == "range" &&
+      domain->args.size() == 2) {
+    return print_latex_prec(binder->args[0], 0) + " = " +
+           print_latex_prec(domain->args[0], 0) + ",\\ldots," +
+           print_latex_prec(domain->args[1], 0);
+  }
+  return print_latex_prec(binder->args[0], 0) + " \\in " +
+         print_latex_prec(domain, 0);
+}
+
+std::string print_latex_prec(Ref ref, int parent_prec) {
+  if (ref->tag != Tag::Compound) {
+    return latex_atom(ref);
+  }
+  if (ref->text == "rule" && ref->args.size() == 2 &&
+      ref->args[0]->tag == Tag::Sym && ref->args[1]->tag == Tag::Compound &&
+      ref->args[1]->text == "forall" && !ref->args[1]->args.empty()) {
+    Ref forall = ref->args[1];
+    std::string out = "\\operatorname{rule}_{\\mathrm{" +
+                      ref->args[0]->text + "}}: " +
+                      print_latex_prec(forall->args.back(), 0);
+    if (Ref when = attr_value(forall, "when")) {
+      out += "\\;\\operatorname{when}\\;" + print_latex_prec(when, 0);
+    }
+    return out;
+  }
+  if (ref->text == "goal" && ref->args.size() == 2 &&
+      ref->args[0]->tag == Tag::Sym) {
+    return "\\operatorname{goal}_{\\mathrm{" + ref->args[0]->text +
+           "}}\\left(" + print_latex_prec(ref->args[1], 0) + "\\right)";
+  }
+  if (ref->text == "neg" && ref->args.size() == 1) {
+    return latex_wrap("-" + print_latex_prec(ref->args[0], 80), 80,
+                      parent_prec);
+  }
+  if (ref->text == "meta" && ref->args.size() == 1) {
+    std::string out = "?" + print_latex_prec(ref->args[0], 0);
+    Ref kind = attr_value(ref, "kind");
+    if (kind && kind->text == "seq") {
+      out += "\\ldots";
+    } else if (kind && kind->text == "seq?") {
+      out += "\\ldots?";
+    }
+    return out;
   }
   if (ref->text == "idx" && ref->args.size() == 2 &&
       ref->args[1]->tag == Tag::Compound && ref->args[1]->text == "down" &&
       ref->args[1]->args.size() == 1) {
-    return print_latex_inner(ref->args[0]) + "_{" +
-           print_latex_inner(ref->args[1]->args[0]) + "}";
+    return print_latex_prec(ref->args[0], 80) + "_{" +
+           print_latex_prec(ref->args[1]->args[0], 0) + "}";
   }
   if (ref->text == "lam" && ref->args.size() == 2 &&
       ref->args[0]->tag == Tag::Compound && ref->args[0]->text == "binder") {
-    return print_latex_inner(ref->args[0]->args[0]) + " \\mapsto " +
-           print_latex_inner(ref->args[1]);
+    int prec = prec_of("|->");
+    std::string out = print_latex_prec(ref->args[0]->args[0], prec) +
+                      " \\mapsto " + print_latex_prec(ref->args[1], prec);
+    return latex_wrap(out, prec, parent_prec);
+  }
+  if ((ref->text == "forall" || ref->text == "exists") &&
+      ref->args.size() == 2 && ref->args[0]->tag == Tag::Compound &&
+      ref->args[0]->text == "binder") {
+    std::string quant = ref->text == "forall" ? "\\forall" : "\\exists";
+    return quant + " " + latex_binder(ref->args[0]) + ",\\; " +
+           print_latex_prec(ref->args[1], 0);
+  }
+  if (ref->text == "setbuild" && ref->args.size() == 2) {
+    std::string out = "\\left\\{ " + print_latex_prec(ref->args[0], 0) +
+                      " \\mid " + latex_binder(ref->args[1]);
+    if (Ref when = attr_value(ref, "when")) {
+      out += ",\\; " + print_latex_prec(when, 0);
+    }
+    return out + " \\right\\}";
   }
   if (ref->text == "^" && ref->args.size() == 2) {
-    return print_latex_inner(ref->args[0]) + "^{" +
-           print_latex_inner(ref->args[1]) + "}";
-  }
-  if (ref->text == "*" && ref->args.size() == 2) {
-    return print_latex_inner(ref->args[0]) + " " +
-           print_latex_inner(ref->args[1]);
+    return print_latex_prec(ref->args[0], prec_of("^") + 1) + "^{" +
+           print_latex_prec(ref->args[1], 0) + "}";
   }
   if (ref->text == "/" && ref->args.size() == 2) {
-    return "\\frac{" + print_latex_inner(ref->args[0]) + "}{" +
-           print_latex_inner(ref->args[1]) + "}";
+    return "\\frac{" + print_latex_prec(ref->args[0], 0) + "}{" +
+           print_latex_prec(ref->args[1], 0) + "}";
   }
   if (const internal::OpInfo* op = lookup_op(ref->text);
       op && ref->args.size() == 2 && ref->text != "range") {
-    return print_latex_inner(ref->args[0]) + " " + op->latex + " " +
-           print_latex_inner(ref->args[1]);
+    int prec = op->prec;
+    bool ra = right_assoc(ref->text);
+    std::string sep = ref->text == "*" ? " " : " " + std::string(op->latex) + " ";
+    std::string out =
+        print_latex_prec(ref->args[0], prec + (ra ? 1 : 0)) + sep +
+        print_latex_prec(ref->args[1], prec + (ra ? 0 : 1));
+    return latex_wrap(out, prec, parent_prec);
   }
-  if (ref->text == "sin" && ref->args.size() == 1) {
-    return "\\sin(" + print_latex_inner(ref->args[0]) + ")";
+  if ((ref->text == "sin" || ref->text == "cos" || ref->text == "tan" ||
+       ref->text == "log") &&
+      ref->args.size() == 1) {
+    return "\\" + ref->text + "\\left(" + print_latex_prec(ref->args[0], 0) +
+           "\\right)";
+  }
+  if (ref->text == "sqrt" && ref->args.size() == 1) {
+    return "\\sqrt{" + print_latex_prec(ref->args[0], 0) + "}";
   }
   if (ref->text == "int" && ref->args.size() == 2 &&
       ref->args[0]->args.size() == 2) {
@@ -659,14 +753,22 @@ std::string print_latex_inner(Ref ref) {
     Ref dom = b->args[1];
     if (dom->tag == Tag::Compound && dom->text == "range" &&
         dom->args.size() == 2) {
-      return "\\int_{" + print_latex_inner(dom->args[0]) + "}^{" +
-             print_latex_inner(dom->args[1]) + "} " +
-             print_latex_inner(ref->args[1]) + "\\,d" +
-             print_latex_inner(b->args[0]);
+      return "\\int_{" + print_latex_prec(dom->args[0], 0) + "}^{" +
+             print_latex_prec(dom->args[1], 0) + "} " +
+             print_latex_prec(ref->args[1], 0) + "\\,d" +
+             print_latex_prec(b->args[0], 0);
     }
   }
-  return "\\" + ref->text + "(" +
-         join(printed_args(ref, print_latex_inner), ", ") + ")";
+  std::vector<std::string> parts;
+  for (Ref arg : ref->args) {
+    parts.push_back(print_latex_prec(arg, 0));
+  }
+  return "\\operatorname{" + ref->text + "}\\left(" + join(parts, ", ") +
+         "\\right)" + latex_attrs(ref);
+}
+
+std::string print_latex_inner(Ref ref) {
+  return print_latex_prec(ref, 0);
 }
 
 class JsonParser {

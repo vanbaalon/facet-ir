@@ -203,7 +203,8 @@ void surface_examples() {
            "surface binder integral");
   check(same_tree(integral, read_surface(arena, print_surface(integral))),
         "surface integral fixpoint");
-  check_eq(print_latex(integral), "\\int_{0}^{1} \\sin(\\pi x)\\,dx",
+  check_eq(print_latex(integral),
+           "\\int_{0}^{1} \\sin\\left(\\pi x\\right)\\,dx",
            "latex integral");
 
   Ref limit = read_surface(arena, "lim[x -> 0](sin(x)/x)");
@@ -242,7 +243,7 @@ void surface_examples() {
   check_eq(print_core(subscript),
            "(+ (idx a (down k)) (idx T (down mu)))",
            "surface subscript lowers to idx/down");
-  check_eq(print_latex(subscript), "a_{k} + T_{mu}",
+  check_eq(print_latex(subscript), "a_{k} + T_{\\mu}",
            "latex prints subscripts");
 
   Ref meta = read_surface(arena, "?xs...? + ?x");
@@ -276,6 +277,21 @@ void surface_examples() {
   check_eq(print_surface(rule),
            "rule pyth: sin(?a) ^ 2 + cos(?a) ^ 2 ~> 1 when ?a > 0",
            "surface rule wrapper with guard");
+}
+
+void latex_examples() {
+  Arena arena;
+  check_eq(print_latex(read_surface(arena, "alpha + beta_mu")),
+           "\\alpha + \\beta_{\\mu}", "latex greek symbols and subscript");
+  check_eq(print_latex(read_core(arena, "(* (+ a b) c)")),
+           "\\left(a + b\\right) c", "latex precedence parentheses");
+  check_eq(print_latex(read_surface(arena, "{ i^2 | i : 1..n, i > 0 }")),
+           "\\left\\{ i^{2} \\mid i = 1,\\ldots,n,\\; i > 0 \\right\\}",
+           "latex set-builder");
+  check_eq(print_latex(read_surface(arena, "?xs...?")),
+           "?xs\\ldots?", "latex optional sequence meta");
+  check_eq(print_latex(read_surface(arena, "-(a + b)")),
+           "-\\left(a + b\\right)", "latex negation parentheses");
 }
 
 void audit_regressions() {
@@ -431,6 +447,7 @@ int main() {
   arena_interns_and_compares_exact_trees();
   strict_round_trips();
   surface_examples();
+  latex_examples();
   audit_regressions();
   object_round_trips();
   cross_mode_agreement();
