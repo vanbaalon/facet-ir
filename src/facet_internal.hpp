@@ -15,6 +15,12 @@ struct Tok {
   std::size_t column = 1;
 };
 
+struct LayoutTok {
+  std::string text;
+  std::size_t line = 1;
+  std::size_t column = 1;
+};
+
 class Lexer {
 public:
   explicit Lexer(std::string input);
@@ -36,6 +42,8 @@ private:
   void next();
   std::string location() const;
 };
+
+std::vector<LayoutTok> lex_layout_for_test(const std::string& input);
 
 struct OpInfo {
   const char* head;

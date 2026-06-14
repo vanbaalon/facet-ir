@@ -105,6 +105,8 @@ This checklist is intentionally closer to the current code than the milestone li
 6. Reject bare statement equality with a diagnostic like `use '<-' for assignment; '=' is equality`.
 7. Gate: a Newton `do:` block lowers to the spec core, strict rejects layout input, and expression parsing outside `do:` is unchanged.
 
+Implementation note: the first spike should stay isolated as an internal layout-token helper. It should prove `NEWLINE`/`INDENT`/`DEDENT`, nested `:` blocks, continuation-line indentation, and hard errors for unexpected indent, missing block, bad dedent, and tabs before any statement parser consumes those tokens.
+
 **Step 7 — graphics syntax without renderer.**
 1. Add binder-head entries for graphics forms and canonicalise `param[...]` to `parametric[...]`.
 2. Add `scene{...}` as an ordered collection head; no block layout yet.

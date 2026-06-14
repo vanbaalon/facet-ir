@@ -1,4 +1,5 @@
 #include "facet/facet.hpp"
+#include "../src/facet_internal.hpp"
 
 #include <fstream>
 #include <iostream>
@@ -16,6 +17,21 @@ struct CorpusCase {
   std::string name;
   std::map<std::string, std::string> fields;
 };
+
+std::string layout_text(const std::string& input) {
+  std::vector<std::string> parts;
+  for (const auto& tok : facet::internal::lex_layout_for_test(input)) {
+    parts.push_back(tok.text);
+  }
+  std::string out;
+  for (std::size_t i = 0; i < parts.size(); ++i) {
+    if (i) {
+      out += " ";
+    }
+    out += parts[i];
+  }
+  return out;
+}
 
 void check(bool condition, const std::string& name) {
   if (!condition) {
@@ -672,6 +688,45 @@ void validator_warnings() {
   }
 }
 
+void layout_lexer_tests() {
+  check_eq(layout_text("do:\n    return x\n"),
+           "do : NEWLINE INDENT return x NEWLINE DEDENT",
+           "layout lexer emits indent/dedent for do block");
+
+  check_eq(layout_text("do:\n    while c:\n        return x\n    return y\n"),
+           "do : NEWLINE INDENT while c : NEWLINE INDENT return x NEWLINE "
+           "DEDENT return y NEWLINE DEDENT",
+           "layout lexer emits nested block structure");
+
+  check_eq(layout_text("do:\n    return f(\n        x,\n        y\n    )\n"),
+           "do : NEWLINE INDENT return f ( x , y ) NEWLINE DEDENT",
+           "layout lexer ignores indentation inside continuation lines");
+
+  check_throws_contains(
+      []() {
+        (void)layout_text("x\n    y\n");
+      },
+      "unexpected indent", "layout lexer rejects indent without opener");
+
+  check_throws_contains(
+      []() {
+        (void)layout_text("do:\nreturn x\n");
+      },
+      "expected indented block", "layout lexer requires block after colon");
+
+  check_throws_contains(
+      []() {
+        (void)layout_text("do:\n    return x\n  return y\n");
+      },
+      "dedent does not match", "layout lexer rejects mismatched dedent");
+
+  check_throws_contains(
+      []() {
+        (void)layout_text("do:\n\treturn x\n");
+      },
+      "tabs are not allowed", "layout lexer rejects tabs in indentation");
+}
+
 void new_feature_regressions() {
   Arena arena;
 
@@ -752,6 +807,7 @@ int main() {
   adversarial_grammar();
   diagnostics_include_locations();
   validator_warnings();
+  layout_lexer_tests();
   new_feature_regressions();
 
   if (failures) {
