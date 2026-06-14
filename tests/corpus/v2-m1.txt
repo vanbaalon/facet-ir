@@ -57,13 +57,13 @@ case: named_set
 surface: set{ 1, 2, 3 }
 strict: set(1, 2, 3)
 core: (set 1 2 3)
-latex: \operatorname{set}\left(1, 2, 3\right)
+latex: \left\{ 1, 2, 3 \right\}
 ---
 case: named_seq
 surface: seq{ a, b, c }
 strict: seq(a, b, c)
 core: (seq a b c)
-latex: \operatorname{seq}\left(a, b, c\right)
+latex: \left\langle a, b, c \right\rangle
 object: {"head":"seq","args":[{"atom":"sym","value":"a"},{"atom":"sym","value":"b"},{"atom":"sym","value":"c"}]}
 ---
 case: named_setbuild

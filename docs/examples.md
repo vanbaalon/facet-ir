@@ -430,7 +430,7 @@ LaTeX:    f \sim g
 Surface:  set{ 1, 2, 3 }
 Strict:   set(1, 2, 3)
 Core:     (set 1 2 3)
-LaTeX:    \operatorname{set}\left(1, 2, 3\right)
+LaTeX:    \left\{ 1, 2, 3 \right\}
 ```
 
 The v2 surface form names the collection head. The legacy bare `{ 1, 2, 3 }` form remains readable as a compatibility spelling for `set{ 1, 2, 3 }`.
@@ -441,7 +441,7 @@ The v2 surface form names the collection head. The legacy bare `{ 1, 2, 3 }` for
 Surface:  set{ x ^ 2, x ^ 3 }
 Strict:   set(^(x, 2), ^(x, 3))
 Core:     (set (^ x 2) (^ x 3))
-LaTeX:    \operatorname{set}\left(x^{2}, x^{3}\right)
+LaTeX:    \left\{ x^{2}, x^{3} \right\}
 ```
 
 ### 5.3 Sequence Literal
@@ -450,7 +450,7 @@ LaTeX:    \operatorname{set}\left(x^{2}, x^{3}\right)
 Surface:  seq{ a, b, c }
 Strict:   seq(a, b, c)
 Core:     (seq a b c)
-LaTeX:    \operatorname{seq}\left(a, b, c\right)
+LaTeX:    \left\langle a, b, c \right\rangle
 ```
 
 `seq` is an ordered collection head; it uses the same `{ }` aggregate syntax as `set`, but preserves order by head semantics.
@@ -499,7 +499,61 @@ LaTeX:    \left\{ \operatorname{f}\left(x\right) \mid x \in S,\; \operatorname{f
 
 ## 6. Indexed Expressions
 
-### 6.1 Subscript Shorthand
+### 6.1 Concrete Access
+
+```
+Surface:  v[i]
+Strict:   at(v, i)
+Core:     (at v i)
+LaTeX:    v_{i}
+```
+
+The `[ ]` bracket is concrete indexed-family access. This is distinct from abstract tensor-index notation using `_` / `^`.
+
+### 6.2 Concrete Slice
+
+```
+Surface:  v[a..b, step=k]
+Strict:   slice(v, range(a, b, step=k))
+Core:     (slice v (range a b :step k))
+LaTeX:    v_{a:k:b}
+```
+
+Ranges are inclusive. A stepped slice stores `step` as an attribute on the `range` node.
+
+### 6.3 Bracket-Local End
+
+```
+Surface:  M[1..end, all]
+Strict:   slice(M, range(1, end(M, 1)), all)
+Core:     (slice M (range 1 (end M 1)) all)
+```
+
+The surface token `end` is only bracket-local. In core it is axis-aware, using the indexed object and the 1-based bracket slot. The `all` token is currently an ordinary symbol naming the full axis.
+
+### 6.4 Dictionary Literal
+
+```
+Surface:  dict{ "mass" : m, "spin" : 1 / 2 }
+Strict:   dict(pair("mass", m), pair("spin", /(1, 2)))
+Core:     (dict (pair "mass" m) (pair "spin" (/ 1 2)))
+LaTeX:    \left\{ mass \mapsto m, spin \mapsto \frac{1}{2} \right\}
+```
+
+Dictionary keys are structural. For example, `x + y` and `y + x` are distinct keys unless a later theory-specific normalization explicitly says otherwise.
+
+### 6.5 Dictionary Access
+
+```
+Surface:  d["mass"]
+Strict:   at(d, "mass")
+Core:     (at d "mass")
+LaTeX:    d_{mass}
+```
+
+Dictionaries reuse concrete access because they are indexed families over structural keys.
+
+### 6.6 Subscript Shorthand
 
 From the test notebook (confirmed output):
 
@@ -512,7 +566,7 @@ LaTeX:    a_{k}
 
 The `_` within the identifier token is recognized as a subscript split: the prefix `a` becomes the tensor, the suffix `k` becomes the index.
 
-### 6.2 Multiple Subscripts in an Expression
+### 6.7 Multiple Subscripts in an Expression
 
 From the test notebook (confirmed output):
 
@@ -525,7 +579,7 @@ LaTeX:    a_{k} + T_{\mu}
 
 The LaTeX printer maps `mu` to `\mu` via the Greek symbol table.
 
-### 6.3 Explicit Down Index
+### 6.8 Explicit Down Index
 
 ```
 Surface:  idx(a, down(k))       [strict read]
@@ -534,7 +588,7 @@ Core:     (idx a (down k))
 LaTeX:    a_{k}
 ```
 
-### 6.4 Tensor With Contravariant and Covariant Indices
+### 6.9 Tensor With Contravariant and Covariant Indices
 
 From the test notebook (confirmed output, read as core):
 
@@ -548,7 +602,7 @@ LaTeX:    T^{\mu}_{\nu}
 
 When `idx` has a first `(up ...)` argument followed by a `(down ...)` argument, the LaTeX printer emits `^{...}_{...}` in order.
 
-### 6.5 Subscript on an Indexed Compound
+### 6.10 Subscript on an Indexed Compound
 
 ```
 Surface:  g_mu_nu
@@ -558,7 +612,7 @@ Core:     (idx g (down mu_nu))
 
 Note: `mu_nu` is itself a subscript-shorthand identifier if parsed, or a plain symbol depending on context. The outermost `_` split takes the longest prefix.
 
-### 6.6 Indexed Tensor in an Expression
+### 6.11 Indexed Tensor in an Expression
 
 ```
 Surface:  T^mu_nu * v_mu

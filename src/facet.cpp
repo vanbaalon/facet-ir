@@ -1019,6 +1019,20 @@ std::string print_latex_prec(Ref ref, int parent_prec) {
     }
     return "\\left\\{ " + join(parts, ", ") + " \\right\\}";
   }
+  if (ref->text == "set") {
+    std::vector<std::string> parts;
+    for (Ref arg : ref->args) {
+      parts.push_back(print_latex_prec(arg, 0));
+    }
+    return "\\left\\{ " + join(parts, ", ") + " \\right\\}";
+  }
+  if (ref->text == "seq") {
+    std::vector<std::string> parts;
+    for (Ref arg : ref->args) {
+      parts.push_back(print_latex_prec(arg, 0));
+    }
+    return "\\left\\langle " + join(parts, ", ") + " \\right\\rangle";
+  }
   if (ref->text == "^" && ref->args.size() == 2) {
     return print_latex_prec(ref->args[0], prec_of("^") + 1) + "^{" +
            print_latex_prec(ref->args[1], 0) + "}";
