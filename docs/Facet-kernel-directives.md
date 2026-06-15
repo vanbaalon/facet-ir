@@ -1,6 +1,6 @@
 # Facet — Kernel Directives ("super functions")
 
-> **Single purpose:** define the separate syntax for operations that **manipulate kernels** (set active, init, restart, kill, status) rather than being **evaluated by** a kernel.
+> **Single purpose:** define the separate syntax for operations that **manipulate kernels and live kernel bindings** (set active, init, restart, kill, status, inspect, pull, move, checkpoint) rather than being **evaluated by** a kernel.
 > **Companion to:** *Facet Kernels* (the VS Code notebook architecture) and the *v2 Specification*.
 > **Decision (up front):** directives are written `%verb(args)` — a leading `%` sigil marks a line as a **controller directive**, intercepted before any kernel and never sent to one. They are a third category, distinct from both expressions and projections.
 
@@ -67,6 +67,15 @@ These are the **inline, visible, version-controlled** equivalent of the Command-
 | `%kill(name)` | Kill Kernel | remove a kernel | `Ok[killed: name]` / `Fail[no such kernel]` |
 | `%kernels()` | Kernel Status | list running kernels and types | `KernelTable{…}` (renders as a table) |
 | `%clear(name?)` | — | clear session variables (all, or one kernel's view) | `Ok[cleared]` |
+| `%vars()` | — | list live controller bindings | binding list |
+| `%where(name, format=json?)` | — | inspect binding-table metadata without transporting the value | text or JSON binding metadata |
+| `%pull(name, as=core\|surface\|object, requireIdentity=...)` | — | materialise a live kernel value back into Facet IR | `Ok[pulled]` / structured failure |
+| `%copy(name, to=K)` | — | replicate a binding into another kernel through Facet IR | `Ok[copied]` |
+| `%move(name, to=K)` | — | relocate a binding into another kernel and stale/free the old home | `Ok[moved]` |
+| `%pin(name, [K...])` | — | keep a binding resident in several kernels | `Ok[pinned]` |
+| `%checkpoint(name, as=recipe\|native\|ir\|cache)` | — | record an explicit checkpoint policy | `Ok[checkpointed]` / warning |
+| `%restore(name)` | — | restore from a checkpoint, recomputing recipe checkpoints | `Ok[restored]` |
+| `%gc()` | — | remove unreachable stale bindings | `Ok[gc]` |
 | `%using(name): …block…` | — | **scoped**: use `name` for an indented block, then revert | the block's result |
 
 Closed vocabulary (like the binder-head class): the controller recognises exactly these `%verbs`; an unknown `%verb` is a directive error, never silently passed to a kernel.
@@ -110,8 +119,8 @@ This is why directives don't replace `@ via`: routing one expression and changin
 %use(fast)                         # subsequent cells default to `fast`
 factor(x^6 - 1)                    # evaluated on `fast`
 
-I := int[x : 0..inf](exp(-x^2))    # binds session var I (on active kernel)
-I^2                                # → π/4
+gauss := int[x : 0..inf](exp(-x^2)) # binds a live value in the active kernel
+gauss^2                             # → π/4
 
 %using(cloud):                     # this block runs on `cloud`, then reverts
     simplify(huge_expr)
@@ -121,6 +130,8 @@ simplify(sqrt(x^2)) @ assume(x >= 0) @ via(fast)   # one-shot: this expr on `fas
 
 %restart(fast)                     # re-warm after a bad state
 %kill(cloud)                       # tear down the remote kernel
+%where(gauss, format=json)          # inspect handle metadata, no value transport
+%pull(gauss, as=core)               # materialise through Facet IR on demand
 ```
 
 ---
@@ -135,8 +146,17 @@ simplify(sqrt(x^2)) @ assume(x >= 0) @ via(fast)   # one-shot: this expr on `fas
 %kernels()                 list running kernels (table)
 %clear(name?)              clear session variables
 %using(name): …            scoped kernel for an indented block
+%vars()                    list live bindings
+%where(name[,format=json]) inspect binding metadata without transport
+%pull(name[,as=...])       materialise a binding into Facet IR
+%copy(name,to=K)           replicate a binding
+%move(name,to=K)           relocate a binding
+%pin(name,[K...])          keep a binding resident in several kernels
+%checkpoint(name,as=...)   checkpoint by explicit policy
+%restore(name)             restore a checkpointed binding
+%gc()                      garbage-collect stale bindings
 
 expr @ via(name)           one-shot: run a single expression on `name`   (NOT a directive)
 ```
 
-*Directives in one line:* **a leading `%` marks a controller directive — `%use`, `%init`, `%restart`, `%kill`, `%kernels`, `%using` — intercepted before any kernel and never sent to one; they govern defaults and lifecycle (session/block scope), coexisting with `@ via`'s one-shot expression-scope routing, and they form a third category distinct from both expressions and projections.**
+*Directives in one line:* **a leading `%` marks a controller directive — lifecycle directives plus `%vars`, `%where`, `%pull`, `%copy`, `%move`, `%pin`, `%checkpoint`, `%restore`, and `%gc` — intercepted before any kernel expression evaluation; they govern defaults, live handles, transport, and lifecycle while coexisting with `@ via`'s one-shot expression-scope routing.**

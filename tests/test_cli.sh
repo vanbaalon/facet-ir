@@ -52,6 +52,12 @@ expect "completions CLI" 'simplify(x) @' emit=completions:13
 EXPECT='{"kind":"controller-directive","verb":"init","scoped":false,"args":[{"named":false,"value":"remote"},{"named":true,"key":"name","value":"cloud"},{"named":true,"key":"url","value":"http://x"}]}'
 expect "kernel directive CLI" '%init(remote, name="cloud", url="http://x")' emit=directive
 
+EXPECT='{"kind":"controller-directive","verb":"pin","scoped":false,"args":[{"named":false,"value":"gauss"},{"named":false,"values":["sympy","K2"]}]}'
+expect "kernel directive list CLI" '%pin(gauss, [sympy, K2])' emit=directive
+
+EXPECT='[{"code":"CannotBindProtectedConstant","message":"`I` is the protected imaginary unit and cannot be bound","offset":0,"length":0}]'
+expect "protected I diagnostic CLI" 'I := 1' emit=diagnostics
+
 lsp_init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 lsp_msg="$(printf 'Content-Length: %s\r\n\r\n%s' "${#lsp_init}" "$lsp_init")"
 expect_contains "lsp initialize" "$lsp_msg" '"semanticTokensProvider"' --lsp

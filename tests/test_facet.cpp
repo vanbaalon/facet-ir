@@ -811,6 +811,15 @@ void validator_warnings() {
     check_eq(end_warnings[0].code, "EndOutsideIndex",
              "validator warns on free end code");
   }
+
+  Ref protected_i = read_surface(arena, "I := 1");
+  std::vector<Diagnostic> protected_warnings = validate(protected_i);
+  check_eq(std::to_string(protected_warnings.size()), "1",
+           "validator warns on protected I binding count");
+  if (!protected_warnings.empty()) {
+    check_eq(protected_warnings[0].code, "CannotBindProtectedConstant",
+             "validator warns on protected I binding code");
+  }
 }
 
 void layout_lexer_tests() {
@@ -881,12 +890,14 @@ void comment_syntax_tests() {
            "surface do block accepts leading comments");
 
   std::vector<SemanticToken> toks = semantic_tokens("x # comment\n+ 1");
-  check_eq(std::to_string(toks.size()), "3",
-           "semantic tokens omit line comments");
-  if (toks.size() == 3) {
-    check_eq(toks[1].type, "operator",
+  check_eq(std::to_string(toks.size()), "4",
+           "semantic tokens include line comments");
+  if (toks.size() == 4) {
+    check_eq(toks[1].type, "comment",
+             "semantic tokens classify line comments");
+    check_eq(toks[2].type, "operator",
              "semantic tokens continue after comment newline");
-    check_eq(std::to_string(toks[1].offset), "12",
+    check_eq(std::to_string(toks[2].offset), "12",
              "semantic tokens preserve offsets after comments");
   }
 
@@ -937,6 +948,46 @@ void kernel_directive_tests() {
   KernelDirective scoped = read_kernel_directive("%using(cloud):");
   check(scoped.scoped, "kernel directive parses scoped using colon");
 
+  KernelDirective where = read_kernel_directive("%where(gauss, format=json)");
+  check_eq(where.verb, "where", "v3 directive parses where");
+  check_eq(std::to_string(where.args.size()), "2",
+           "v3 where directive accepts named format arg");
+  if (where.args.size() == 2) {
+    check_eq(where.args[0].value, "gauss", "v3 where parses binding name");
+    check_eq(where.args[1].key, "format", "v3 where parses format key");
+    check_eq(where.args[1].value, "json", "v3 where parses format value");
+  }
+
+  KernelDirective pull =
+      read_kernel_directive("%pull(gauss, as=core, requireIdentity=\"===\")");
+  check_eq(pull.verb, "pull", "v3 directive parses pull");
+  check_eq(std::to_string(pull.args.size()), "3",
+           "v3 pull directive accepts options");
+
+  KernelDirective move = read_kernel_directive("%move(gauss, to=K2)");
+  check_eq(move.verb, "move", "v3 directive parses move");
+
+  KernelDirective pin = read_kernel_directive("%pin(gauss, [sympy, K2])");
+  check_eq(pin.verb, "pin", "v3 directive parses pin");
+  check_eq(std::to_string(pin.args.size()), "2",
+           "v3 pin directive parses name and target list");
+  if (pin.args.size() == 2) {
+    check(pin.args[1].list, "v3 pin target arg is a list");
+    check_eq(std::to_string(pin.args[1].values.size()), "2",
+             "v3 pin target list has two entries");
+    if (pin.args[1].values.size() == 2) {
+      check_eq(pin.args[1].values[0], "sympy",
+               "v3 pin target list first entry");
+      check_eq(pin.args[1].values[1], "K2",
+               "v3 pin target list second entry");
+    }
+  }
+
+  KernelDirective vars = read_kernel_directive("%vars()");
+  check_eq(vars.verb, "vars", "v3 directive parses vars");
+  KernelDirective gc = read_kernel_directive("%gc()");
+  check_eq(gc.verb, "gc", "v3 directive parses gc");
+
   check_throws_contains(
       []() {
         Arena a;
@@ -954,6 +1005,16 @@ void kernel_directive_tests() {
         (void)read_kernel_directive("%using(fast)");
       },
       "requires ':'", "kernel directive requires colon for using");
+  check_throws_contains(
+      []() {
+        (void)read_kernel_directive("%move(gauss)");
+      },
+      "invalid %move", "v3 move requires destination");
+  check_throws_contains(
+      []() {
+        (void)read_kernel_directive("%pin(gauss)");
+      },
+      "invalid %pin", "v3 pin requires target list");
 }
 
 void semantic_token_tests() {
@@ -976,6 +1037,15 @@ void semantic_token_tests() {
              "semantic tokens classify function call head");
     check_eq(toks[11].type, "free_var",
              "semantic tokens classify function argument");
+  }
+  std::vector<SemanticToken> protected_i = semantic_tokens("I + pi");
+  check_eq(std::to_string(protected_i.size()), "3",
+           "semantic tokens include protected I expression");
+  if (protected_i.size() == 3) {
+    check_eq(protected_i[0].type, "special_constant",
+             "semantic tokens classify protected I as special constant");
+    check_eq(protected_i[2].type, "special_constant",
+             "semantic tokens still classify pi as special constant");
   }
 
   std::vector<SemanticToken> partial = semantic_tokens("do:\n    return x +");

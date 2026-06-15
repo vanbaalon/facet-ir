@@ -266,7 +266,7 @@ std::string semantic_type_for_token(const std::vector<internal::Tok>& toks,
   static const std::unordered_set<std::string> meta_keywords = {
       "goal", "rule", "when", "via", "assume", "need"};
   static const std::unordered_set<std::string> special_constants = {
-      "pi", "e", "i", "inf", "end", "all"};
+      "pi", "e", "i", "I", "inf", "end", "all"};
   static const std::unordered_set<std::string> punctuation = {
       "(", ")", "[", "]", "{", "}", ",", ":"};
   static const std::unordered_set<std::string> operators = {
@@ -1533,6 +1533,11 @@ void validate_walk(Ref ref, std::vector<Diagnostic>& out) {
   if (ref->tag != Tag::Compound) {
     return;
   }
+  if (ref->text == ":=" && !ref->args.empty() &&
+      ref->args[0]->tag == Tag::Sym && ref->args[0]->text == "I") {
+    out.push_back({"CannotBindProtectedConstant",
+                   "`I` is the protected imaginary unit and cannot be bound"});
+  }
   if (ref->text == "at" && ref->args.size() >= 2 &&
       ref->args[0]->tag == Tag::Sym &&
       is_known_nonindexed_function(ref->args[0]->text)) {
@@ -2234,7 +2239,10 @@ std::string directive_value_from_token(const std::string& token) {
 
 bool is_directive_verb(const std::string& verb) {
   static const std::unordered_set<std::string> verbs = {
-      "use", "init", "restart", "kill", "kernels", "clear", "using"};
+      "use",        "init", "restart",   "kill",       "kernels",
+      "clear",      "using", "vars",      "where",      "pull",
+      "move",       "copy", "pin",       "checkpoint", "restore",
+      "gc"};
   return verbs.find(verb) != verbs.end();
 }
 
@@ -2249,7 +2257,9 @@ void check_directive_arity(const KernelDirective& directive) {
     throw Error("invalid %" + directive.verb + " directive arguments");
   };
   if (directive.verb == "use" || directive.verb == "kill" ||
-      directive.verb == "using") {
+      directive.verb == "using" || directive.verb == "where" ||
+      directive.verb == "pull" || directive.verb == "checkpoint" ||
+      directive.verb == "restore") {
     if (positional != 1) {
       fail();
     }
@@ -2261,13 +2271,154 @@ void check_directive_arity(const KernelDirective& directive) {
     if (positional > 1) {
       fail();
     }
-  } else if (directive.verb == "kernels") {
+  } else if (directive.verb == "kernels" || directive.verb == "vars" ||
+             directive.verb == "gc") {
     if (positional != 0 || !directive.args.empty()) {
+      fail();
+    }
+  } else if (directive.verb == "move" || directive.verb == "copy") {
+    bool has_to = false;
+    for (const auto& arg : directive.args) {
+      has_to = has_to || (arg.named && arg.key == "to" && !arg.value.empty());
+    }
+    if (positional != 1 || !has_to) {
+      fail();
+    }
+  } else if (directive.verb == "pin") {
+    bool has_targets = false;
+    for (const auto& arg : directive.args) {
+      has_targets = has_targets || (arg.list && !arg.values.empty());
+    }
+    if (positional != 2 || !has_targets) {
       fail();
     }
   }
   if (directive.verb == "using" && !directive.scoped) {
     throw Error("%using directive requires ':' and an indented block");
+  }
+}
+
+DirectiveArg parse_directive_arg(const std::vector<internal::Tok>& toks,
+                                 std::size_t& pos,
+                                 const std::string& verb) {
+  DirectiveArg arg;
+  if (is_identifier_token(toks[pos].text) && pos + 1 < toks.size() &&
+      toks[pos + 1].text == "=") {
+    arg.named = true;
+    arg.key = toks[pos].text;
+    pos += 2;
+  }
+  if (pos >= toks.size() || toks[pos].eof || toks[pos].text == ")" ||
+      toks[pos].text == "," || toks[pos].text == "=") {
+    throw Error("expected literal argument in kernel directive %" + verb);
+  }
+  if (toks[pos].text == "[") {
+    arg.list = true;
+    ++pos;
+    if (pos < toks.size() && toks[pos].text != "]") {
+      while (true) {
+        if (pos >= toks.size() || toks[pos].eof) {
+          throw Error("unterminated list argument in kernel directive %" + verb);
+        }
+        if (!(is_identifier_token(toks[pos].text) ||
+              is_string_token(toks[pos].text))) {
+          throw Error("kernel directive list entries must be literal names");
+        }
+        arg.values.push_back(directive_value_from_token(toks[pos].text));
+        ++pos;
+        if (pos < toks.size() && toks[pos].text == ",") {
+          ++pos;
+          continue;
+        }
+        break;
+      }
+    }
+    if (pos >= toks.size() || toks[pos].text != "]") {
+      throw Error("expected ']' in kernel directive %" + verb);
+    }
+    ++pos;
+    return arg;
+  }
+  if (!(is_identifier_token(toks[pos].text) || is_int_token(toks[pos].text) ||
+        is_real_token(toks[pos].text) || is_string_token(toks[pos].text))) {
+    throw Error("kernel directive arguments must be literal values");
+  }
+  arg.value = directive_value_from_token(toks[pos].text);
+  ++pos;
+  return arg;
+}
+
+// Scan raw input for comment spans and emit SemanticTokens.
+// Called before lex_surface_tokens because the lexer strips comments.
+static void collect_comment_tokens(const std::string& input,
+                                   std::vector<SemanticToken>& out) {
+  std::size_t pos = 0;
+  while (pos < input.size()) {
+    // Skip string literals so '#' inside them is not treated as a comment.
+    if (input[pos] == '"') {
+      ++pos;
+      while (pos < input.size() && input[pos] != '"') {
+        if (input[pos] == '\\') { ++pos; }
+        ++pos;
+      }
+      if (pos < input.size()) { ++pos; }
+      continue;
+    }
+    if (input[pos] != '#') { ++pos; continue; }
+    // Block comment: #| ... |#  (nestable)
+    if (pos + 1 < input.size() && input[pos + 1] == '|') {
+      std::size_t start = pos;
+      pos += 2;
+      int depth = 1;
+      while (pos < input.size() && depth > 0) {
+        if (pos + 1 < input.size() && input[pos] == '#' && input[pos + 1] == '|') {
+          pos += 2; ++depth;
+        } else if (pos + 1 < input.size() && input[pos] == '|' && input[pos + 1] == '#') {
+          pos += 2; --depth;
+        } else { ++pos; }
+      }
+      out.push_back({start, pos - start, "comment", {"documentation"}});
+    } else {
+      // Line comment: #: is a doc comment, # is a regular comment.
+      bool is_doc = pos + 1 < input.size() && input[pos + 1] == ':';
+      std::size_t start = pos;
+      while (pos < input.size() && input[pos] != '\n') { ++pos; }
+      std::vector<std::string> mods;
+      if (is_doc) { mods.push_back("documentation"); }
+      out.push_back({start, pos - start, "comment", std::move(mods)});
+    }
+  }
+}
+
+// Emit semantic tokens for a %verb(args...) kernel directive cell.
+static void emit_directive_semantic_tokens(const std::string& input,
+                                           std::vector<SemanticToken>& out) {
+  std::vector<internal::Tok> toks = lex_surface_tokens(input);
+  for (std::size_t i = 0; i < toks.size(); ++i) {
+    if (toks[i].eof) { continue; }
+    const std::string& text = toks[i].text;
+    std::string type;
+    std::vector<std::string> mods;
+    if (i == 0 && text == "%") {
+      type = "operator";
+    } else if (i == 1 && is_identifier_token(text)) {
+      type = "function";
+    } else if (text == "(" || text == ")" || text == "," ||
+               text == "[" || text == "]") {
+      type = "punctuation";
+    } else if (text == "=" || text == ":") {
+      type = "operator";
+    } else if (is_string_token(text)) {
+      type = "string";
+    } else if (is_identifier_token(text)) {
+      // Keyword argument key if the next non-comment token is "="
+      type = (i + 1 < toks.size() && toks[i + 1].text == "=")
+                 ? "property"
+                 : "variable";
+    } else {
+      type = "operator";
+    }
+    out.push_back({toks[i].offset, text.size(), std::move(type), std::move(mods)});
   }
 }
 
@@ -2323,6 +2474,13 @@ bool is_kernel_directive(const std::string& surface_input) {
          is_identifier_token(toks[1].text) && toks[2].text == "(";
 }
 
+bool is_blank_or_comment(const std::string& surface_input) {
+  // lex_surface_tokens strips whitespace and comments; if only the EOF
+  // sentinel remains, the input was blank or contained only comments.
+  std::vector<internal::Tok> toks = lex_surface_tokens(surface_input);
+  return toks.size() == 1 && toks[0].eof;
+}
+
 KernelDirective read_kernel_directive(const std::string& surface_input) {
   std::vector<internal::Tok> toks = lex_surface_tokens(surface_input);
   if (!(toks.size() >= 4 && toks[0].text == "%" &&
@@ -2340,25 +2498,8 @@ KernelDirective read_kernel_directive(const std::string& surface_input) {
       if (pos >= toks.size() || toks[pos].eof) {
         throw Error("unterminated kernel directive %" + directive.verb);
       }
-      DirectiveArg arg;
-      if (is_identifier_token(toks[pos].text) && pos + 1 < toks.size() &&
-          toks[pos + 1].text == "=") {
-        arg.named = true;
-        arg.key = toks[pos].text;
-        pos += 2;
-      }
-      if (pos >= toks.size() || toks[pos].eof || toks[pos].text == ")" ||
-          toks[pos].text == "," || toks[pos].text == "=") {
-        throw Error("expected literal argument in kernel directive %" +
-                    directive.verb);
-      }
-      if (!(is_identifier_token(toks[pos].text) || is_int_token(toks[pos].text) ||
-            is_real_token(toks[pos].text) || is_string_token(toks[pos].text))) {
-        throw Error("kernel directive arguments must be literal values");
-      }
-      arg.value = directive_value_from_token(toks[pos].text);
+      DirectiveArg arg = parse_directive_arg(toks, pos, directive.verb);
       directive.args.push_back(std::move(arg));
-      ++pos;
       if (pos < toks.size() && toks[pos].text == ",") {
         ++pos;
         continue;
@@ -2382,17 +2523,27 @@ KernelDirective read_kernel_directive(const std::string& surface_input) {
 }
 
 std::vector<SemanticToken> semantic_tokens(const std::string& surface_input) {
-  std::vector<internal::Tok> toks = lex_surface_tokens(surface_input);
   std::vector<SemanticToken> out;
-  for (std::size_t i = 0; i < toks.size(); ++i) {
-    if (toks[i].eof) {
-      continue;
+  // Comments are stripped by the lexer — scan the raw input first.
+  collect_comment_tokens(surface_input, out);
+  // Kernel directives get their own token classification.
+  if (is_kernel_directive(surface_input)) {
+    emit_directive_semantic_tokens(surface_input, out);
+  } else {
+    std::vector<internal::Tok> toks = lex_surface_tokens(surface_input);
+    for (std::size_t i = 0; i < toks.size(); ++i) {
+      if (toks[i].eof) { continue; }
+      std::vector<std::string> modifiers;
+      std::string type = semantic_type_for_token(toks, i, modifiers);
+      out.push_back({toks[i].offset, toks[i].text.size(), std::move(type),
+                     std::move(modifiers)});
     }
-    std::vector<std::string> modifiers;
-    std::string type = semantic_type_for_token(toks, i, modifiers);
-    out.push_back({toks[i].offset, toks[i].text.size(), std::move(type),
-                   std::move(modifiers)});
   }
+  // Sort by offset for reliable delta encoding in the LSP.
+  std::sort(out.begin(), out.end(),
+            [](const SemanticToken& a, const SemanticToken& b) {
+              return a.offset < b.offset;
+            });
   return out;
 }
 
@@ -2504,7 +2655,7 @@ std::vector<CompletionItem> completions(const std::string& surface_input,
                    "Known non-indexed function.");
   }
 
-  for (const std::string& constant : {"pi", "e", "inf"}) {
+  for (const std::string& constant : {"pi", "e", "I", "inf"}) {
     add_completion(out, constant, "Constant", constant,
                    "Special mathematical constant.");
   }

@@ -59,7 +59,9 @@ struct SignatureHelp {
 struct DirectiveArg {
   std::string key;
   std::string value;
+  std::vector<std::string> values;
   bool named = false;
+  bool list = false;
 };
 
 struct KernelDirective {
@@ -166,6 +168,7 @@ CompareResult compare(Arena& arena, Ref lhs, Ref rhs, const std::string& by);
 
 std::vector<Diagnostic> validate(Ref ref);
 bool is_kernel_directive(const std::string& surface_input);
+bool is_blank_or_comment(const std::string& surface_input);
 KernelDirective read_kernel_directive(const std::string& surface_input);
 std::vector<SemanticToken> semantic_tokens(const std::string& surface_input);
 std::vector<CompletionItem> completions(const std::string& surface_input,

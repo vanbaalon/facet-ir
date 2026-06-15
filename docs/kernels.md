@@ -14,14 +14,16 @@ Surface text
     ▼  facet read=surface emit=source:sympy          (C++, ~1 ms)
 Python expression string  (e.g. "integrate(cos(x), (x, 0, 1))")
     │
-    ▼  kernel.evaluate(src, session)                 (kernel process, warm)
+    ▼  kernel.evaluate(src, handle?)                 (kernel process, warm)
 SymPy srepr  (e.g. "sin(Integer(1))")
     │
     ├─▶  facet read=sympy-srepr emit=latex           (C++, ~1 ms)  → Result tab
     └─▶  facet read=sympy-srepr emit=core            (C++, ~1 ms)  → Core tab
 ```
 
-The expensive step — importing SymPy — happens **once** at kernel startup, not on every cell run.
+The expensive step — importing SymPy — happens **once** at kernel startup, not on every cell run. In the extension test suite, a local SymPy kernel showed a ~450-550 ms first evaluation and a sub-millisecond warm follow-up for a trivial expression on the same process.
+
+Kernel calls return a structured result with `status`, `phase`, `operation`, `messages`, `timingMs`, optional `partialResult` fields, and display/readback fields. The notebook renderer exposes these as tabs: **Result**, **Messages**, **Kernel Source**, **Core**, **Error**, plus the intrinsic projection tabs.
 
 Controller directives branch before this pipeline. A top-level line of the form `%verb(...)` is parsed as a controller command and is never passed to `emit=source:sympy` or sent to a kernel:
 
@@ -46,11 +48,13 @@ The default kernel is a persistent Python subprocess embedded in the VS Code ext
 **Protocol:** one JSON line in, one JSON line out.
 
 ```
-→  {"src": "integrate(cos(x), (x, 0, 1))", "session": {"I": "sin(Integer(1))"}}
-←  {"ok": true, "srepr": "sin(Integer(1))"}
+→  {"op": "eval", "src": "integrate(cos(x), (x, 0, 1))", "bindName": "gauss", "handle": "__facet_h_1", "returnSrepr": false}
+←  {"ok": true, "latex": "\\sin{\\left(1 \\right)}", "type": "sin", "size": "1 ops"}
 ```
 
-The `session` field carries any variables bound via `:=` in previous cells (see [Session variables](#session-variables)).
+Bindings live inside the persistent process under opaque controller handles. The controller records metadata about those handles, but it does not resend the full value map on each evaluation and does not materialise Facet IR for `:=` unless `%pull` asks for it.
+
+Evaluation has a per-call timeout. If a local subprocess does not respond in time, the controller kills and quarantines that kernel; it rejects further work with `Hazard` until `%restart(name)` clears the quarantine and starts a fresh generation.
 
 ---
 
@@ -81,6 +85,15 @@ The same operations are also available inline in notebook cells. Inline directiv
 | `%kernels()` | Kernel Status | List running kernels and types |
 | `%clear(name?)` | — | Clear session variables |
 | `%using(name):` | — | Use `name` for an indented block, then restore the prior active kernel |
+| `%vars()` | — | List controller bindings |
+| `%where(name, format=json?)` | — | Inspect where a live binding resides without transporting it |
+| `%pull(name, as=core|surface|object, ...)` | — | Materialise a live binding into Facet IR |
+| `%copy(name, to=K)` | — | Replicate a binding into another kernel |
+| `%move(name, to=K)` | — | Relocate a binding into another kernel |
+| `%pin(name, [K...])` | — | Keep a binding resident in several kernels |
+| `%checkpoint(name, as=recipe|native|ir|cache)` | — | Save a binding by an explicit checkpoint policy |
+| `%restore(name)` | — | Restore a checkpointed binding |
+| `%gc()` | — | Garbage-collect unreachable controller bindings |
 
 Examples:
 
@@ -95,9 +108,16 @@ factor(x^6 - 1)
     expand(other)
 
 %kernels()
+%where(gauss, format=json)
+%pull(gauss, as=core, requireIdentity="===", maxSize="10MB")
+%pin(gauss, [sympy, cloud])
+%checkpoint(gauss, as=recipe)
+%checkpoint(gauss, as=ir, maxSize="10MB")
 ```
 
 Directives are a closed vocabulary. Unknown `%verbs` are controller errors; they are never silently sent to a kernel. `expr @ via(name)` remains expression-scoped one-shot routing, while `%use(name)` changes the session default.
+
+For cross-kernel references, the controller follows data gravity. If a binding lives in the selected target already, evaluation runs there directly. If an explicit route such as `g2 := gauss^2 @ via(fast)` references a value whose home is another kernel, the controller borrows that value through Facet IR into `fast` for the duration of the evaluation, records the result's home on `fast`, and drops the temporary borrow afterward.
 
 ---
 
@@ -192,16 +212,28 @@ CMD ["python3", "/app/kernel_server.py", "--host", "0.0.0.0", "--port", "8765"]
 `:=` evaluates the right-hand side and binds the result to a name that persists for the rest of the notebook session.
 
 ```
-I := int[x : 0..inf](exp(-x^2))   →  I = √π / 2
-I^2                                →  π / 4
+gauss := int[x : 0..inf](exp(-x^2))   →  gauss = √π / 2
+gauss^2                                →  π / 4
 ```
 
-The second cell evaluates `I**2` inside the kernel with `I` already set to `Mul(Rational(1,2), Pow(pi, Rational(1,2)))`.
+The second cell evaluates `gauss**2` inside the same live kernel process. The controller resolves the Facet name to a kernel handle; the value itself stays in the kernel until you explicitly materialise it with `%pull`.
 
-Session state is stored by the **controller** (TypeScript), not by the kernel process. Each request sends the full `session` map alongside the expression, so:
+In v3, `I` is reserved for the imaginary unit and cannot be rebound. Use names like `gauss`, `G`, or `integral_value` for session bindings.
 
-- Restarting a kernel does not lose session variables.
-- Multiple kernels each receive the same session on every request — they stay in sync automatically.
+Session metadata is stored by the **controller** (TypeScript), while bound values live in their home kernel process:
+
+- `%where(name)` inspects the controller binding table only; it does not transport the value.
+- `%pull(name, as=core|surface|object)` asks the home kernel to export the value, then reads it back through Facet IR.
+- Restarting or killing a kernel marks its live homes stale; recipe checkpoints can restore by recomputing provenance.
+- `%copy`, `%move`, and `%pin` perform explicit transport through Facet IR when you want a binding resident in another kernel.
+- `%pull(..., maxSize="...")` refuses materialisation when the exported payload exceeds the explicit size guard.
+
+Checkpoint policies are explicit:
+
+- `as=recipe` stores provenance and restores by recomputing.
+- `as=ir` stores portable Core and requires an explicit `maxSize`.
+- `as=cache` stores Core in a local temporary cache file.
+- `as=native` currently reports `Unmapped` for the SymPy extension kernel because no native dump backend exists.
 
 ---
 
@@ -212,13 +244,17 @@ Session state is stored by the **controller** (TypeScript), not by the kernel pr
 | `sympy` | `python3 -c <script>` | Persistent Python subprocess, SymPy in memory |
 | `remote` | HTTP POST | Any machine running `kernel_server.py` |
 
-Adding a new type (e.g. `mathematica`, `wolfram-cloud`, `sage`) requires implementing the `Kernel` interface in [src/kernel.ts](../vscode-extension/src/kernel.ts):
+Adding a new type (e.g. `mathematica`, `wolfram-cloud`, `sage`) requires implementing the `Kernel` interface in the VS Code extension's `src/kernel.ts`:
 
 ```typescript
 interface Kernel {
     readonly id: string;
     readonly type: string;
-    evaluate(src: string, session: Record<string, string>): Promise<DaemonResponse>;
+    readonly stateful: boolean;
+    readonly generation: number;
+    evaluate(src: string, options?: { bindName?: string; handle?: string; timeoutMs?: number }): Promise<DaemonResponse>;
+    pull(handle: string, timeoutMs?: number): Promise<DaemonResponse>;
+    forget(handle: string): Promise<DaemonResponse>;
     restart(): void;
     dispose(): void;
 }

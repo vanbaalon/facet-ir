@@ -162,8 +162,20 @@ std::string format_directive(const facet::KernelDirective& directive) {
     if (directive.args[i].named) {
       out << ",\"key\":\"" << json_escape(directive.args[i].key) << "\"";
     }
-    out << ",\"value\":\"" << json_escape(directive.args[i].value)
-        << "\"}";
+    if (directive.args[i].list) {
+      out << ",\"values\":[";
+      for (std::size_t j = 0; j < directive.args[i].values.size(); ++j) {
+        if (j) {
+          out << ",";
+        }
+        out << "\"" << json_escape(directive.args[i].values[j]) << "\"";
+      }
+      out << "]";
+    } else {
+      out << ",\"value\":\"" << json_escape(directive.args[i].value)
+          << "\"";
+    }
+    out << "}";
   }
   out << "]}";
   return out.str();
@@ -259,9 +271,9 @@ std::string semantic_token_data(const std::string& text) {
       {"keyword", 0},       {"function", 1},      {"operator", 2},
       {"number", 3},        {"string", 4},        {"enumMember", 5},
       {"property", 6},      {"variable", 7},      {"decorator", 8},
-      {"punctuation", 9},   {"binder_head", 1},   {"binder_var", 7},
-      {"free_var", 7},      {"function_call", 1}, {"meta_keyword", 8},
-      {"special_constant", 5}};
+      {"punctuation", 9},   {"comment", 10},
+      {"binder_head", 1},   {"binder_var", 7},    {"free_var", 7},
+      {"function_call", 1}, {"meta_keyword", 8},  {"special_constant", 5}};
   std::vector<facet::SemanticToken> toks;
   try {
     toks = facet::semantic_tokens(text);
@@ -292,9 +304,9 @@ std::string semantic_token_data(const std::string& text) {
     }
     int mods = 0;
     for (const auto& mod : toks[i].modifiers) {
-      if (mod == "declaration") {
-        mods |= 1;
-      }
+      if (mod == "declaration")   { mods |= 1; }
+      if (mod == "defaultLibrary") { mods |= 2; }
+      if (mod == "documentation") { mods |= 4; }
     }
     if (i) {
       out << ",";
@@ -371,6 +383,10 @@ std::string lsp_signature(const std::string& text, std::size_t offset) {
 }
 
 std::string lsp_diagnostics(const std::string& text) {
+  // Directives and comment-only cells are not surface expressions — no errors.
+  if (facet::is_kernel_directive(text) || facet::is_blank_or_comment(text)) {
+    return "{\"kind\":\"full\",\"items\":[]}";
+  }
   try {
     facet::Arena arena;
     facet::Ref ref = facet::read_surface(arena, text);
@@ -428,8 +444,9 @@ int run_lsp() {
           "{\"capabilities\":{\"textDocumentSync\":2,\"semanticTokensProvider\":"
           "{\"legend\":{\"tokenTypes\":[\"keyword\",\"function\",\"operator\","
           "\"number\",\"string\",\"enumMember\",\"property\",\"variable\","
-          "\"decorator\",\"punctuation\"],\"tokenModifiers\":[\"declaration\","
-          "\"defaultLibrary\"]},\"full\":true,\"range\":true},"
+          "\"decorator\",\"punctuation\",\"comment\"],\"tokenModifiers\":"
+          "[\"declaration\",\"defaultLibrary\",\"documentation\"]},"
+          "\"full\":true,\"range\":true},"
           "\"completionProvider\":{\"triggerCharacters\":[\"[\",\"(\",\"{\","
           "\"@\"]},\"hoverProvider\":true,"
           "\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\",\"[\"]},"

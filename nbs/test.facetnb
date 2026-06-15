@@ -2,30 +2,318 @@
   "version": 1,
   "cells": [
     {
+      "kind": "markdown",
+      "value": "# Facet Notebook — Kernel Demo\n\nPress **⇧↩** to evaluate. The **Facet IR** pipeline parses expressions, then a **SymPy kernel** computes the result and renders it as LaTeX.\n\n**Kernel directives** — type in any code cell and run:\n\n| Directive | Effect |\n|---|---|\n| `%init(sympy, name=\"k\")` | Start a local SymPy kernel named `k` |\n| `%init(remote, name=\"k\", url=\"http://host:8765\")` | Connect to a remote HTTP kernel |\n| `%use(k)` | Switch the active kernel to `k` |\n| `%restart(k)` | Kill and re-warm kernel `k` |\n| `%kill(k)` | Remove kernel `k` |\n| `%kernels()` | List all running kernels |\n| `%clear(name?)` | Clear one or all session variables |\n\nThe **Command Palette** (`Facet:`) offers the same operations interactively. The status bar (bottom-right) shows the active kernel.",
+      "readMode": "surface"
+    },
+    {
+      "kind": "markdown",
+      "value": "## 1 · Integration",
+      "readMode": "surface"
+    },
+    {
       "kind": "code",
-      "value": "sum(x,0..1)[ x * 2 + 1 ]",
+      "value": "I := int[x : 0..inf](exp(-x^2))",
       "readMode": "surface",
       "outputs": [
         {
-          "mime": "application/vnd.code.notebook.error",
-          "data": "{\n\t\"name\": \"FacetParseError\",\n\t\"message\": \"facet: trailing input after surface expression near line 1, column 12\"\n}"
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"I := int[x : 0..inf](exp(-x^2))\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"I := int[x : 0..inf](exp(-x ^ 2))\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \":=(I, int(binder(x, range(0, inf)), exp(^(neg(x), 2))))\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(:= I (int (binder x (range 0 inf)) (exp (^ (neg x) 2))))\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\":=\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"I\\\"},{\\\"head\\\":\\\"int\\\",\\\"args\\\":[{\\\"head\\\":\\\"binder\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"},{\\\"head\\\":\\\"range\\\",\\\"args\\\":[{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"0\\\"},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"inf\\\"}]}]},{\\\"head\\\":\\\"exp\\\",\\\"args\\\":[{\\\"head\\\":\\\"^\\\",\\\"args\\\":[{\\\"head\\\":\\\"neg\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]},{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"2\\\"}]}]}]}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"I := \\\\int_{0}^{\\\\infty} \\\\operatorname{exp}\\\\left(-x^{2}\\\\right)\\\\,dx\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"\\\\frac{1}{2} \\\\pi^{\\\\frac{1}{2}}\",\n\t\t\"core\": \"(* (/ 1 2) (^ pi (/ 1 2)))\",\n\t\t\"assignName\": \"I\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "\\frac{1}{2} \\pi^{\\frac{1}{2}}"
         }
       ]
     },
     {
       "kind": "code",
-      "value": "int[x:0..1](sin(pi*x))",
+      "value": "I^2",
       "readMode": "surface",
       "outputs": [
         {
-          "mime": "text/html",
-          "data": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<style>\n* { box-sizing: border-box; margin: 0; padding: 0; }\n\nbody {\n  font-family: var(--vscode-font-family, sans-serif);\n  font-size: var(--vscode-font-size, 13px);\n  color: var(--vscode-foreground);\n  background: transparent;\n  padding: 4px 2px;\n}\n\n.header {\n  font-size: 11px;\n  opacity: 0.5;\n  margin-bottom: 6px;\n  letter-spacing: 0.2px;\n}\n\n.tab-bar {\n  display: flex;\n  gap: 0;\n  border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35));\n  margin-bottom: 0;\n}\n\n.tab-btn {\n  background: none;\n  border: none;\n  border-bottom: 2px solid transparent;\n  padding: 5px 14px;\n  cursor: pointer;\n  color: var(--vscode-foreground);\n  font-family: inherit;\n  font-size: 12px;\n  opacity: 0.6;\n  margin-bottom: -1px;\n  transition: opacity 0.1s;\n}\n.tab-btn:hover { opacity: 0.85; background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.07)); }\n.tab-btn.active { opacity: 1; border-bottom-color: var(--vscode-focusBorder, #007acc); }\n\n.tab-panel { display: none; position: relative; padding: 8px 0 0 0; }\n.tab-panel.active { display: block; }\n\n.output-code {\n  font-family: var(--vscode-editor-font-family, 'Menlo', 'Courier New', monospace);\n  font-size: 13px;\n  line-height: 1.55;\n  background: var(--vscode-textCodeBlock-background, rgba(0,0,0,0.08));\n  border-radius: 4px;\n  padding: 10px 14px;\n  white-space: pre-wrap;\n  word-break: break-all;\n  color: var(--vscode-editor-foreground, inherit);\n}\n.output-code.error {\n  color: var(--vscode-editorError-foreground, var(--vscode-errorForeground, #f44));\n  background: var(--vscode-inputValidation-errorBackground, rgba(255,50,50,0.08));\n}\n\n.copy-btn {\n  position: absolute;\n  top: 12px;\n  right: 4px;\n  background: var(--vscode-button-secondaryBackground, rgba(100,100,100,0.3));\n  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));\n  border: 1px solid var(--vscode-button-secondaryBorder, transparent);\n  padding: 2px 9px;\n  border-radius: 3px;\n  cursor: pointer;\n  font-size: 11px;\n  font-family: inherit;\n  opacity: 0;\n  transition: opacity 0.15s;\n}\n.tab-panel:hover .copy-btn { opacity: 1; }\n.copy-btn:active { opacity: 0.6; }\n\n.latex-source-label,\n.latex-display-label {\n  font-size: 10px;\n  text-transform: uppercase;\n  letter-spacing: 0.6px;\n  opacity: 0.45;\n  margin: 8px 0 4px 2px;\n}\n.latex-source-label { margin-top: 0; }\n\n.latex-display {\n  font-size: 17px;\n  line-height: 1.8;\n  padding: 10px 14px;\n  background: var(--vscode-textCodeBlock-background, rgba(0,0,0,0.08));\n  border-radius: 4px;\n  font-family: 'Georgia', 'Times New Roman', serif;\n  letter-spacing: 0.3px;\n}\n</style>\n</head>\n<body>\n<div class=\"header\">read mode: surface</div>\n<div class=\"tab-bar\"><button class=\"tab-btn active\" onclick=\"showTab('surface')\" id=\"btn-surface\">Surface</button><button class=\"tab-btn\" onclick=\"showTab('strict')\" id=\"btn-strict\">Strict</button><button class=\"tab-btn\" onclick=\"showTab('core')\" id=\"btn-core\">Core</button><button class=\"tab-btn\" onclick=\"showTab('object')\" id=\"btn-object\">JSON</button><button class=\"tab-btn\" onclick=\"showTab('latex')\" id=\"btn-latex\">LaTeX</button></div>\n<div class=\"tab-panel active\" id=\"panel-surface\"><button class=\"copy-btn\" onclick=\"copyText(this)\" data-text=\"int[x : 0..1](sin(pi * x))\">Copy</button><pre class=\"output-code\">int[x : 0..1](sin(pi * x))</pre></div><div class=\"tab-panel\" id=\"panel-strict\"><button class=\"copy-btn\" onclick=\"copyText(this)\" data-text=\"int(binder(x, range(0, 1)), sin(*(pi, x)))\">Copy</button><pre class=\"output-code\">int(binder(x, range(0, 1)), sin(*(pi, x)))</pre></div><div class=\"tab-panel\" id=\"panel-core\"><button class=\"copy-btn\" onclick=\"copyText(this)\" data-text=\"(int (binder x (range 0 1)) (sin (* pi x)))\">Copy</button><pre class=\"output-code\">(int (binder x (range 0 1)) (sin (* pi x)))</pre></div><div class=\"tab-panel\" id=\"panel-object\"><button class=\"copy-btn\" onclick=\"copyText(this)\" data-text=\"{&quot;head&quot;:&quot;int&quot;,&quot;args&quot;:[{&quot;head&quot;:&quot;binder&quot;,&quot;args&quot;:[{&quot;atom&quot;:&quot;sym&quot;,&quot;value&quot;:&quot;x&quot;},{&quot;head&quot;:&quot;range&quot;,&quot;args&quot;:[{&quot;atom&quot;:&quot;int&quot;,&quot;value&quot;:&quot;0&quot;},{&quot;atom&quot;:&quot;int&quot;,&quot;value&quot;:&quot;1&quot;}]}]},{&quot;head&quot;:&quot;sin&quot;,&quot;args&quot;:[{&quot;head&quot;:&quot;*&quot;,&quot;args&quot;:[{&quot;atom&quot;:&quot;sym&quot;,&quot;value&quot;:&quot;pi&quot;},{&quot;atom&quot;:&quot;sym&quot;,&quot;value&quot;:&quot;x&quot;}]}]}]}\">Copy</button><pre class=\"output-code\">{\n  &quot;head&quot;: &quot;int&quot;,\n  &quot;args&quot;: [\n    {\n      &quot;head&quot;: &quot;binder&quot;,\n      &quot;args&quot;: [\n        {\n          &quot;atom&quot;: &quot;sym&quot;,\n          &quot;value&quot;: &quot;x&quot;\n        },\n        {\n          &quot;head&quot;: &quot;range&quot;,\n          &quot;args&quot;: [\n            {\n              &quot;atom&quot;: &quot;int&quot;,\n              &quot;value&quot;: &quot;0&quot;\n            },\n            {\n              &quot;atom&quot;: &quot;int&quot;,\n              &quot;value&quot;: &quot;1&quot;\n            }\n          ]\n        }\n      ]\n    },\n    {\n      &quot;head&quot;: &quot;sin&quot;,\n      &quot;args&quot;: [\n        {\n          &quot;head&quot;: &quot;*&quot;,\n          &quot;args&quot;: [\n            {\n              &quot;atom&quot;: &quot;sym&quot;,\n              &quot;value&quot;: &quot;pi&quot;\n            },\n            {\n              &quot;atom&quot;: &quot;sym&quot;,\n              &quot;value&quot;: &quot;x&quot;\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}</pre></div><div class=\"tab-panel\" id=\"panel-latex\"><button class=\"copy-btn\" onclick=\"copyText(this)\" data-text=\"\\int_{0}^{1} \\sin\\left(\\pi x\\right)\\,dx\">Copy</button><div class=\"latex-source-label\">LaTeX source</div><pre class=\"output-code\">\\int_{0}^{1} \\sin\\left(\\pi x\\right)\\,dx</pre><div class=\"latex-display-label\">Rendered (Unicode approximation)</div><div class=\"latex-display\">∫[0..1] sinleft(π xright) dx</div></div>\n<script>\nfunction showTab(id) {\n  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });\n  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });\n  var btn = document.getElementById('btn-' + id);\n  var panel = document.getElementById('panel-' + id);\n  if (btn) btn.classList.add('active');\n  if (panel) panel.classList.add('active');\n}\n\nfunction copyText(btn) {\n  var text = btn.getAttribute('data-text') || '';\n  if (navigator.clipboard && navigator.clipboard.writeText) {\n    navigator.clipboard.writeText(text).catch(function() { fallbackCopy(text); });\n  } else {\n    fallbackCopy(text);\n  }\n  var orig = btn.textContent;\n  btn.textContent = 'Copied!';\n  setTimeout(function() { btn.textContent = orig; }, 1200);\n}\n\nfunction fallbackCopy(text) {\n  var ta = document.createElement('textarea');\n  ta.value = text;\n  ta.style.position = 'fixed';\n  ta.style.opacity = '0';\n  document.body.appendChild(ta);\n  ta.focus();\n  ta.select();\n  try { document.execCommand('copy'); } catch(e) {}\n  document.body.removeChild(ta);\n}\n</script>\n</body>\n</html>"
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"I^2\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"I ^ 2\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"^(I, 2)\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(^ I 2)\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\"^\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"I\\\"},{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"2\\\"}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"I^{2}\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"\\\\frac{1}{4} \\\\pi\",\n\t\t\"core\": \"(* (/ 1 4) pi)\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "\\frac{1}{4} \\pi"
         }
       ]
     },
     {
       "kind": "code",
-      "value": "",
+      "value": "sum[k : 1..inf](1/k^2)",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"sum[k : 1..inf](1/k^2)\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"sum[k : 1..inf](1 / k ^ 2)\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"sum(binder(k, range(1, inf)), /(1, ^(k, 2)))\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(sum (binder k (range 1 inf)) (/ 1 (^ k 2)))\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\"sum\\\",\\\"args\\\":[{\\\"head\\\":\\\"binder\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"k\\\"},{\\\"head\\\":\\\"range\\\",\\\"args\\\":[{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"1\\\"},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"inf\\\"}]}]},{\\\"head\\\":\\\"/\\\",\\\"args\\\":[{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"1\\\"},{\\\"head\\\":\\\"^\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"k\\\"},{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"2\\\"}]}]}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"\\\\sum_{k = 1}^{\\\\infty} \\\\frac{1}{k^{2}}\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"\\\\frac{1}{6} \\\\pi^{2}\",\n\t\t\"core\": \"(* (/ 1 6) (^ pi 2))\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "\\frac{1}{6} \\pi^{2}"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "int[x : 0..pi](sin(x))",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"int[x : 0..pi](sin(x))\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"int[x : 0..pi](sin(x))\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"int(binder(x, range(0, pi)), sin(x))\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(int (binder x (range 0 pi)) (sin x))\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\"int\\\",\\\"args\\\":[{\\\"head\\\":\\\"binder\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"},{\\\"head\\\":\\\"range\\\",\\\"args\\\":[{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"0\\\"},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"pi\\\"}]}]},{\\\"head\\\":\\\"sin\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"\\\\int_{0}^{\\\\pi} \\\\sin\\\\left(x\\\\right)\\\\,dx\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"2\",\n\t\t\"core\": \"2\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "2"
+        }
+      ]
+    },
+    {
+      "kind": "markdown",
+      "value": "## 2 · Differentiation",
+      "readMode": "surface"
+    },
+    {
+      "kind": "code",
+      "value": "diff[x](sin(x)^2)",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"diff[x](sin(x)^2)\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"diff[x](sin(x) ^ 2)\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"diff(^(sin(x), 2), x)\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(diff (^ (sin x) 2) x)\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\"diff\\\",\\\"args\\\":[{\\\"head\\\":\\\"^\\\",\\\"args\\\":[{\\\"head\\\":\\\"sin\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]},{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"2\\\"}]},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"\\\\frac{d^{}}{dx} \\\\sin\\\\left(x\\\\right)^{2}\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"2 \\\\sin\\\\left(x\\\\right) \\\\cos\\\\left(x\\\\right)\",\n\t\t\"core\": \"(* (* 2 (sin x)) (cos x))\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "2 \\sin\\left(x\\right) \\cos\\left(x\\right)"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "diff[x, x, x,x](exp(-x^2))",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"diff[x, x, x,x](exp(-x^2))\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"diff[x, x, x, x](exp(-x ^ 2))\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"diff(exp(^(neg(x), 2)), x, x, x, x)\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(diff (exp (^ (neg x) 2)) x x x x)\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\"diff\\\",\\\"args\\\":[{\\\"head\\\":\\\"exp\\\",\\\"args\\\":[{\\\"head\\\":\\\"^\\\",\\\"args\\\":[{\\\"head\\\":\\\"neg\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]},{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"2\\\"}]}]},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"\\\\frac{d^{}^{}^{}^{}}{dxdxdxdx} \\\\operatorname{exp}\\\\left(-x^{2}\\\\right)\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"4 \\\\left(4 x^{4} + -1 12 x^{2} + 3\\\\right) \\\\operatorname{exp}\\\\left(-x^{2}\\\\right)\",\n\t\t\"core\": \"(* (* 4 (+ (+ (* 4 (^ x 4)) (* (* -1 12) (^ x 2))) 3)) (exp (neg (^ x 2))))\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "4 \\left(4 x^{4} + -1 12 x^{2} + 3\\right) \\operatorname{exp}\\left(-x^{2}\\right)"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "simplify(sin(x)^2 + cos(x)^2)",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"simplify(sin(x)^2 + cos(x)^2)\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"simplify(sin(x) ^ 2 + cos(x) ^ 2)\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"simplify(+(^(sin(x), 2), ^(cos(x), 2)))\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(simplify (+ (^ (sin x) 2) (^ (cos x) 2)))\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\"simplify\\\",\\\"args\\\":[{\\\"head\\\":\\\"+\\\",\\\"args\\\":[{\\\"head\\\":\\\"^\\\",\\\"args\\\":[{\\\"head\\\":\\\"sin\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]},{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"2\\\"}]},{\\\"head\\\":\\\"^\\\",\\\"args\\\":[{\\\"head\\\":\\\"cos\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]},{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"2\\\"}]}]}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"\\\\operatorname{simplify}\\\\left(\\\\sin\\\\left(x\\\\right)^{2} + \\\\cos\\\\left(x\\\\right)^{2}\\\\right)\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"1\",\n\t\t\"core\": \"1\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "1"
+        }
+      ]
+    },
+    {
+      "kind": "markdown",
+      "value": "## 3 · Limits & session variables\n\n`:=` evaluates the RHS and binds the result to a name for subsequent cells. `I^2` in Section 1 uses `I` defined two cells above it.",
+      "readMode": "surface"
+    },
+    {
+      "kind": "code",
+      "value": "lim[x -> 0](sin(x)/x)",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"lim[x -> 0](sin(x)/x)\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"lim[x -> 0](sin(x) / x)\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"lim(binder(x, approach(0)), /(sin(x), x))\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(lim (binder x (approach 0)) (/ (sin x) x))\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\"lim\\\",\\\"args\\\":[{\\\"head\\\":\\\"binder\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"},{\\\"head\\\":\\\"approach\\\",\\\"args\\\":[{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"0\\\"}]}]},{\\\"head\\\":\\\"/\\\",\\\"args\\\":[{\\\"head\\\":\\\"sin\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"\\\\lim_{x \\\\to 0} \\\\frac{\\\\sin\\\\left(x\\\\right)}{x}\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"1\",\n\t\t\"core\": \"1\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "1"
+        }
+      ]
+    },
+    {
+      "kind": "markdown",
+      "value": "## 4 · Multiple kernels\n\nSeveral independent SymPy processes can run simultaneously. The cells below walk through the full lifecycle: init → switch → compute → restart → compute again → inspect → switch back.",
+      "readMode": "surface"
+    },
+    {
+      "kind": "code",
+      "value": "%init(sympy, name=\"local2\")",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "text/plain",
+          "data": "Kernel 'local2' initialized [sympy]"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "%use(local2)",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "text/plain",
+          "data": "Active kernel → local2"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "diff[x, x](exp(-x^2))",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"diff[x, x](exp(-x^2))\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"diff[x, x](exp(-x ^ 2))\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"diff(exp(^(neg(x), 2)), x, x)\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(diff (exp (^ (neg x) 2)) x x)\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\"diff\\\",\\\"args\\\":[{\\\"head\\\":\\\"exp\\\",\\\"args\\\":[{\\\"head\\\":\\\"^\\\",\\\"args\\\":[{\\\"head\\\":\\\"neg\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]},{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"2\\\"}]}]},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"\\\\frac{d^{}^{}}{dxdx} \\\\operatorname{exp}\\\\left(-x^{2}\\\\right)\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"2 \\\\left(2 x^{2} - 1\\\\right) \\\\operatorname{exp}\\\\left(-x^{2}\\\\right)\",\n\t\t\"core\": \"(* (* 2 (+ (* 2 (^ x 2)) -1)) (exp (neg (^ x 2))))\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "2 \\left(2 x^{2} - 1\\right) \\operatorname{exp}\\left(-x^{2}\\right)"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "%restart(local2)",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "text/plain",
+          "data": "Kernel 'local2' restarted"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "diff[x, x](exp(-x^2))",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"diff[x, x](exp(-x^2))\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"diff[x, x](exp(-x ^ 2))\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"diff(exp(^(neg(x), 2)), x, x)\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(diff (exp (^ (neg x) 2)) x x)\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\"diff\\\",\\\"args\\\":[{\\\"head\\\":\\\"exp\\\",\\\"args\\\":[{\\\"head\\\":\\\"^\\\",\\\"args\\\":[{\\\"head\\\":\\\"neg\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]},{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"2\\\"}]}]},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"x\\\"}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"\\\\frac{d^{}^{}}{dxdx} \\\\operatorname{exp}\\\\left(-x^{2}\\\\right)\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"2 \\\\left(2 x^{2} - 1\\\\right) \\\\operatorname{exp}\\\\left(-x^{2}\\\\right)\",\n\t\t\"core\": \"(* (* 2 (+ (* 2 (^ x 2)) -1)) (exp (neg (^ x 2))))\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "2 \\left(2 x^{2} - 1\\right) \\operatorname{exp}\\left(-x^{2}\\right)"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "%kernels()",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "text/plain",
+          "data": "  sympy [sympy]\n▶ local2 [sympy]"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "%use(sympy)",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "text/plain",
+          "data": "Active kernel → sympy"
+        }
+      ]
+    },
+    {
+      "kind": "markdown",
+      "value": "## 5 · Remote kernels\n\nA kernel can run on any machine with Python + SymPy. Start the server anywhere:\n\n```bash\npip install sympy\npython3 nbs/kernel_server.py --port 8765\n```\n\nThe cells below connect to it, compute the Basel sum remotely, then clean up. Free-tier options: Oracle Cloud always-free ARM VM, fly.io, Railway, GitHub Codespaces.",
+      "readMode": "surface"
+    },
+    {
+      "kind": "code",
+      "value": "%init(remote, name=\"remote-sympy\", url=\"http://localhost:8765\")",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"%init(remote, name=\\\"remote-sympy\\\", url=\\\"http://localhost:8765\\\")\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": false,\n\t\t\"latex\": \"facet: kernel directive is not a surface expression; handle it in the controller\",\n\t\t\"core\": \"\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "facet: kernel directive is not a surface expression; handle it in the controller"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "%use(\"remote-sympy\")",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"%use(\\\"remote-sympy\\\")\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": false,\n\t\t\"latex\": \"facet: kernel directive is not a surface expression; handle it in the controller\",\n\t\t\"core\": \"\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "facet: kernel directive is not a surface expression; handle it in the controller"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "sum[k : 1..inf](1/k^2)",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"sum[k : 1..inf](1/k^2)\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"sum[k : 1..inf](1 / k ^ 2)\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"sum(binder(k, range(1, inf)), /(1, ^(k, 2)))\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"(sum (binder k (range 1 inf)) (/ 1 (^ k 2)))\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"{\\\"head\\\":\\\"sum\\\",\\\"args\\\":[{\\\"head\\\":\\\"binder\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"k\\\"},{\\\"head\\\":\\\"range\\\",\\\"args\\\":[{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"1\\\"},{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"inf\\\"}]}]},{\\\"head\\\":\\\"/\\\",\\\"args\\\":[{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"1\\\"},{\\\"head\\\":\\\"^\\\",\\\"args\\\":[{\\\"atom\\\":\\\"sym\\\",\\\"value\\\":\\\"k\\\"},{\\\"atom\\\":\\\"int\\\",\\\"value\\\":\\\"2\\\"}]}]}]}\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": true,\n\t\t\t\"text\": \"\\\\sum_{k = 1}^{\\\\infty} \\\\frac{1}{k^{2}}\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": true,\n\t\t\"latex\": \"\\\\frac{1}{6} \\\\pi^{2}\",\n\t\t\"core\": \"(* (/ 1 6) (^ pi 2))\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "\\frac{1}{6} \\pi^{2}"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "%use(sympy)",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"%use(sympy)\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": false,\n\t\t\"latex\": \"facet: kernel directive is not a surface expression; handle it in the controller\",\n\t\t\"core\": \"\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "facet: kernel directive is not a surface expression; handle it in the controller"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "%kill(\"remote-sympy\")",
+      "readMode": "surface",
+      "outputs": [
+        {
+          "mime": "application/x-facet-expression",
+          "data": "{\n\t\"source\": \"%kill(\\\"remote-sympy\\\")\",\n\t\"readMode\": \"surface\",\n\t\"results\": {\n\t\t\"surface\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"strict\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"core\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"object\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t},\n\t\t\"latex\": {\n\t\t\t\"ok\": false,\n\t\t\t\"text\": \"facet: kernel directive is not a surface expression; handle it in the controller\"\n\t\t}\n\t},\n\t\"kernel\": {\n\t\t\"ok\": false,\n\t\t\"latex\": \"facet: kernel directive is not a surface expression; handle it in the controller\",\n\t\t\"core\": \"\"\n\t}\n}"
+        },
+        {
+          "mime": "text/plain",
+          "data": "facet: kernel directive is not a surface expression; handle it in the controller"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "value": "# sdfsdfsdf\n# sdfsdfsdfsdf\n",
       "readMode": "surface"
     }
   ]

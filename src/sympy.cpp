@@ -511,8 +511,13 @@ std::string print_sympy_prec(Ref ref, int parent_prec) {
     int prec = table_entry->prec;
     int rhs_prec = ref->text == "^" ? prec : prec + 1;
     int lhs_prec = ref->text == "^" ? prec + 1 : prec;
-    std::string out = print_sympy_prec(ref->args[0], lhs_prec) +
-                      table_entry->target +
+    std::string lhs = print_sympy_prec(ref->args[0], lhs_prec);
+    // Python: ** binds more tightly than unary -.
+    // Without explicit parens, -a**n means -(a**n), not (-a)**n.
+    if (ref->text == "^" && !lhs.empty() && lhs[0] == '-') {
+      lhs = "(" + lhs + ")";
+    }
+    std::string out = lhs + table_entry->target +
                       print_sympy_prec(ref->args[1], rhs_prec);
     return sympy_wrap(out, prec, parent_prec);
   }

@@ -695,14 +695,25 @@ kernel-source emission:
 %kill(cloud)
 %kernels()
 %clear()
+%vars()
+%where(gauss, format=json)
+%pull(gauss, as=core, requireIdentity="===")
+%copy(gauss, to=K2)
+%move(gauss, to=K2)
+%pin(gauss, [sympy, K2])
+%checkpoint(gauss, as=recipe)
+%restore(gauss)
+%gc()
 %using(fast):
     factor(x^6 - 1)
 ```
 
 The closed directive vocabulary is `use`, `init`, `restart`, `kill`, `kernels`,
-`clear`, and `using`. Directives are never sent to a kernel and never appear in
+`clear`, `using`, `vars`, `where`, `pull`, `copy`, `move`, `pin`, `checkpoint`,
+`restore`, and `gc`. Directives are never sent to a kernel and never appear in
 the intrinsic projections of an expression. The CLI exposes the classifier as
-`emit=directive`, which returns structured JSON for notebook controllers. Normal
+`emit=directive`, which returns structured JSON for notebook controllers,
+including list arguments such as `%pin(gauss, [sympy, K2])`. Normal
 `read_surface` rejects directive lines.
 
 `@ via(name)` remains expression-scoped one-shot routing; `%use(name)` changes

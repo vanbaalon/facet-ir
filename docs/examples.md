@@ -854,6 +854,9 @@ translated to kernel source:
 %use(fast)
 factor(x^6 - 1)
 %kernels()
+%where(gauss, format=json)
+%pull(gauss, as=core, requireIdentity="===")
+%pin(gauss, [sympy, fast])
 ```
 
 The CLI exposes the same classifier for notebook controllers:

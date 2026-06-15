@@ -133,7 +133,7 @@ echo 'sin(x)^2 + cos(x)^2' \
 
 External kernel source/evaluation modes are intentionally separate from the five projections. The built-in SymPy bridge is available as `read=source:sympy-srepr` and `emit=source:sympy*`.
 The dependency-free Python source kernel is available as `emit=source:python`.
-Notebook kernel lifecycle directives such as `%use(fast)` and `%init(sympy, name="fast")` are controller commands, not math expressions; see [Facet Kernels](docs/kernels.md).
+Notebook kernel directives such as `%use(fast)`, `%init(sympy, name="fast")`, `%where(gauss)`, `%pull(gauss, as=core)`, and `%pin(gauss, [sympy, K2])` are controller commands, not math expressions; see [Facet Kernels](docs/kernels.md).
 
 ---
 
