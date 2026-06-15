@@ -214,6 +214,8 @@ std::string sympy_atom(Ref ref) {
   if (ref->tag == Tag::Str) {
     return "\"" + escape(ref->text) + "\"";
   }
+  if (ref->text == "inf" || ref->text == "infinity") return "oo";
+  if (ref->text == "pi") return "pi";
   return ref->text;
 }
 
@@ -264,10 +266,13 @@ const KernelManifest& sympy_manifest() {
           {">=", MapKind::Relation, "Ge"},
           {"<", MapKind::Relation, "Lt"},
           {"<=", MapKind::Relation, "Le"},
-          {"int", MapKind::Function, "Integral"},
-          {"sum", MapKind::Function, "Sum"},
+          {"exp", MapKind::Function, "exp"},
+          {"abs", MapKind::Function, "Abs"},
+          {"factor", MapKind::Function, "factor"},
+          {"int", MapKind::Function, "integrate"},
+          {"sum", MapKind::Function, "summation"},
           {"prod", MapKind::Function, "Product"},
-          {"lim", MapKind::Function, "Limit"},
+          {"lim", MapKind::Function, "limit"},
           {"diff", MapKind::Function, "diff"},
           {"lam", MapKind::Function, "Lambda"},
       }};
@@ -524,7 +529,7 @@ std::string print_sympy_prec(Ref ref, int parent_prec) {
     Ref domain = binder->args[1];
     if (domain->tag == Tag::Compound && domain->text == "range" &&
         domain->args.size() == 2) {
-      return "Integral(" + print_sympy_prec(ref->args[1], 0) + ", (" +
+      return "integrate(" + print_sympy_prec(ref->args[1], 0) + ", (" +
              print_sympy_prec(binder->args[0], 0) + ", " +
              print_sympy_prec(domain->args[0], 0) + ", " +
              print_sympy_prec(domain->args[1], 0) + "))";
@@ -537,7 +542,7 @@ std::string print_sympy_prec(Ref ref, int parent_prec) {
     Ref domain = binder->args[1];
     if (domain->tag == Tag::Compound && domain->text == "range" &&
         domain->args.size() == 2) {
-      return "Sum(" + print_sympy_prec(ref->args[1], 0) + ", (" +
+      return "summation(" + print_sympy_prec(ref->args[1], 0) + ", (" +
              print_sympy_prec(binder->args[0], 0) + ", " +
              print_sympy_prec(domain->args[0], 0) + ", " +
              print_sympy_prec(domain->args[1], 0) + "))";
@@ -553,7 +558,7 @@ std::string print_sympy_prec(Ref ref, int parent_prec) {
       return "Product(" + print_sympy_prec(ref->args[1], 0) + ", (" +
              print_sympy_prec(binder->args[0], 0) + ", " +
              print_sympy_prec(domain->args[0], 0) + ", " +
-             print_sympy_prec(domain->args[1], 0) + "))";
+             print_sympy_prec(domain->args[1], 0) + ")).doit()";
     }
   }
   if (ref->text == "lim" && ref->args.size() == 2 &&
@@ -563,7 +568,7 @@ std::string print_sympy_prec(Ref ref, int parent_prec) {
     Ref domain = binder->args[1];
     if (domain->tag == Tag::Compound && domain->text == "approach" &&
         domain->args.size() == 1) {
-      return "Limit(" + print_sympy_prec(ref->args[1], 0) + ", " +
+      return "limit(" + print_sympy_prec(ref->args[1], 0) + ", " +
              print_sympy_prec(binder->args[0], 0) + ", " +
              print_sympy_prec(domain->args[0], 0) + ")";
     }
@@ -628,13 +633,20 @@ Ref from_srepr(Arena& arena, const Srepr& value) {
   }
 
   if (value.head == "Symbol" && value.args.size() == 1 && value.args[0].string) {
-    return arena.sym(value.args[0].text);
+    const std::string& sym_name = value.args[0].text;
+    if (sym_name == "oo") return arena.sym("inf");
+    return arena.sym(sym_name);
+  }
+  if (!value.call && value.head == "oo") {
+    return arena.sym("inf");
   }
   if (value.head == "Integer" && value.args.size() == 1) {
     return arena.integer(value.args[0].text);
   }
-  if (value.head == "Rational" && value.args.size() == 2) {
-    return arena.rational(value.args[0].text, value.args[1].text);
+  if (value.head == "Rational" && value.args.size() == 2 &&
+      value.args[0].number && value.args[1].number) {
+    return arena.compound("/", {arena.integer(value.args[0].text),
+                                arena.integer(value.args[1].text)});
   }
   if (value.head == "Float" && !value.args.empty()) {
     return arena.real(value.args[0].text);
@@ -671,9 +683,12 @@ Ref from_srepr(Arena& arena, const Srepr& value) {
                            from_srepr(arena, value.args[1])});
   }
   if ((value.head == "sin" || value.head == "cos" || value.head == "tan" ||
-       value.head == "log" || value.head == "sqrt") &&
+       value.head == "log" || value.head == "sqrt" || value.head == "exp" ||
+       value.head == "erf" || value.head == "erfc" || value.head == "Abs" ||
+       value.head == "factorial" || value.head == "gamma") &&
       value.args.size() == 1) {
-    return arena.compound(value.head, {from_srepr(arena, value.args[0])});
+    std::string head = value.head == "Abs" ? "abs" : value.head;
+    return arena.compound(head, {from_srepr(arena, value.args[0])});
   }
   if ((value.head == "Integral" || value.head == "Sum" ||
        value.head == "Product") &&
@@ -807,14 +822,20 @@ std::string build_eval_code(const std::string& source, const AssumeMap& assumpti
     "assume_map = " + assume_lit + "\n"
     "names = set(re.findall(r'\\b[A-Za-z_]\\w*\\b', src))\n"
     "known = {\n"
+    "  'integrate': s.integrate, 'summation': s.summation, 'limit': s.limit,\n"
     "  'Integral': s.Integral, 'Sum': s.Sum, 'Product': s.Product,\n"
     "  'Limit': s.Limit, 'Lambda': s.Lambda, 'diff': s.diff,\n"
     "  'sin': s.sin, 'cos': s.cos, 'tan': s.tan, 'log': s.log,\n"
-    "  'sqrt': s.sqrt, 'simplify': s.simplify, 'expand': s.expand,\n"
+    "  'exp': s.exp, 'sqrt': s.sqrt, 'Abs': s.Abs, 'factor': s.factor,\n"
+    "  'simplify': s.simplify, 'expand': s.expand,\n"
     "  'Eq': s.Eq, 'Ne': s.Ne, 'Gt': s.Gt, 'Ge': s.Ge,\n"
-    "  'Lt': s.Lt, 'Le': s.Le, 'pi': s.pi\n"
+    "  'Lt': s.Lt, 'Le': s.Le, 'pi': s.pi, 'oo': s.oo\n"
     "}\n"
     "env = dict(known)\n"
+    "import json as _json, os as _os\n"
+    "_srepr_env = {k: getattr(s, k) for k in dir(s) if not k.startswith('_')}\n"
+    "for _k, _v in _json.loads(_os.environ.get('FACET_SESSION_SREPR', '{}')).items():\n"
+    "  env[_k] = eval(_v, {'__builtins__': {}}, _srepr_env)\n"
     "for name in names:\n"
     "  if name not in env:\n"
     "    kwargs = {k: v for d in [assume_map.get(name, {})] for k, v in d.items()}\n"

@@ -26,7 +26,7 @@ std::size_t mode_offset(const std::string& mode, const std::string& prefix) {
 
 void usage() {
   std::cerr << "usage: facet read=<surface|strict|core|object|sympy-srepr> "
-               "emit=<surface|strict|core|object|latex|semantic-tokens|completions:N|hover:N|signature:N|diagnostics|render:svg|render:pdf|render:png|render:html|coverage:K|source:K|source:sympy-srepr|source:sympy-core|sympy|sympy-srepr|sympy-core> "
+               "emit=<surface|strict|core|object|latex|directive|semantic-tokens|completions:N|hover:N|signature:N|diagnostics|render:svg|render:pdf|render:png|render:html|coverage:K|source:K|source:sympy-srepr|source:sympy-core|sympy|sympy-srepr|sympy-core> "
                "[compare=EXPR] [by=<structural|simplify|numeric|numeric(samples=N,tol=E)>] < input\n";
 }
 
@@ -149,6 +149,26 @@ std::string format_signature(const facet::SignatureHelp& sig) {
   return out.str();
 }
 
+std::string format_directive(const facet::KernelDirective& directive) {
+  std::ostringstream out;
+  out << "{\"kind\":\"controller-directive\",\"verb\":\""
+      << json_escape(directive.verb) << "\",\"scoped\":"
+      << (directive.scoped ? "true" : "false") << ",\"args\":[";
+  for (std::size_t i = 0; i < directive.args.size(); ++i) {
+    if (i) {
+      out << ",";
+    }
+    out << "{\"named\":" << (directive.args[i].named ? "true" : "false");
+    if (directive.args[i].named) {
+      out << ",\"key\":\"" << json_escape(directive.args[i].key) << "\"";
+    }
+    out << ",\"value\":\"" << json_escape(directive.args[i].value)
+        << "\"}";
+  }
+  out << "]}";
+  return out.str();
+}
+
 std::string json_string_field(const std::string& json, const std::string& key) {
   std::string marker = "\"" + key + "\":";
   std::size_t pos = json.find(marker);
@@ -242,7 +262,12 @@ std::string semantic_token_data(const std::string& text) {
       {"punctuation", 9},   {"binder_head", 1},   {"binder_var", 7},
       {"free_var", 7},      {"function_call", 1}, {"meta_keyword", 8},
       {"special_constant", 5}};
-  std::vector<facet::SemanticToken> toks = facet::semantic_tokens(text);
+  std::vector<facet::SemanticToken> toks;
+  try {
+    toks = facet::semantic_tokens(text);
+  } catch (const facet::Error&) {
+    return "{\"data\":[]}";
+  }
   std::ostringstream out;
   out << "{\"data\":[";
   int prev_line = 0;
@@ -284,7 +309,12 @@ std::string semantic_token_data(const std::string& text) {
 }
 
 std::string lsp_completions(const std::string& text, std::size_t offset) {
-  std::vector<facet::CompletionItem> items = facet::completions(text, offset);
+  std::vector<facet::CompletionItem> items;
+  try {
+    items = facet::completions(text, offset);
+  } catch (const facet::Error&) {
+    return "{\"isIncomplete\":false,\"items\":[]}";
+  }
   std::ostringstream out;
   out << "{\"isIncomplete\":false,\"items\":[";
   for (std::size_t i = 0; i < items.size(); ++i) {
@@ -301,15 +331,20 @@ std::string lsp_completions(const std::string& text, std::size_t offset) {
 }
 
 std::string lsp_hover(const std::string& text, std::size_t offset) {
-  facet::Arena arena;
-  facet::HoverInfo info = facet::hover(arena, text, offset);
-  return "{\"contents\":{\"kind\":\"markdown\",\"value\":\"```facet\\n" +
-         json_escape(info.surface) + "\\n```\\n```core\\n" +
-         json_escape(info.core) + "\\n```\\nLaTeX: `" +
-         json_escape(info.latex) + "`\"}}";
+  try {
+    facet::Arena arena;
+    facet::HoverInfo info = facet::hover(arena, text, offset);
+    return "{\"contents\":{\"kind\":\"markdown\",\"value\":\"```facet\\n" +
+           json_escape(info.surface) + "\\n```\\n```core\\n" +
+           json_escape(info.core) + "\\n```\\nLaTeX: `" +
+           json_escape(info.latex) + "`\"}}";
+  } catch (const facet::Error&) {
+    return "null";
+  }
 }
 
 std::string lsp_signature(const std::string& text, std::size_t offset) {
+  try {
   facet::SignatureHelp sig = facet::signature_help(text, offset);
   std::ostringstream out;
   out << "{\"signatures\":[{\"label\":\"" << json_escape(sig.head) << "(";
@@ -330,6 +365,9 @@ std::string lsp_signature(const std::string& text, std::size_t offset) {
   out << "]}],\"activeSignature\":0,\"activeParameter\":"
       << sig.active_parameter << "}";
   return out.str();
+  } catch (const facet::Error&) {
+    return "{\"signatures\":[],\"activeSignature\":0,\"activeParameter\":0}";
+  }
 }
 
 std::string lsp_diagnostics(const std::string& text) {
@@ -383,6 +421,7 @@ int run_lsp() {
     std::cin.read(body.data(), static_cast<std::streamsize>(length));
     std::string method = json_string_field(body, "method");
     std::string id = json_id(body);
+    std::cerr << "[facet-lsp] " << method << "\n" << std::flush;
     std::string result;
     if (method == "initialize") {
       result =
@@ -392,7 +431,7 @@ int run_lsp() {
           "\"decorator\",\"punctuation\"],\"tokenModifiers\":[\"declaration\","
           "\"defaultLibrary\"]},\"full\":true,\"range\":true},"
           "\"completionProvider\":{\"triggerCharacters\":[\"[\",\"(\",\"{\","
-          "\" \",\"@\"]},\"hoverProvider\":true,"
+          "\"@\"]},\"hoverProvider\":true,"
           "\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\",\"[\"]},"
           "\"diagnosticProvider\":{\"interFileDependencies\":false,"
           "\"workspaceDiagnostics\":false}}}";
@@ -460,8 +499,10 @@ std::string format_compare(const facet::CompareResult& result) {
 } // namespace
 
 int main(int argc, char** argv) {
-  if (argc == 2 && std::string(argv[1]) == "--lsp") {
-    return run_lsp();
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "--lsp") {
+      return run_lsp();
+    }
   }
   std::string read = "surface";
   std::string emit = "core";
@@ -489,6 +530,11 @@ int main(int argc, char** argv) {
   try {
     if (emit == "semantic-tokens") {
       std::cout << format_semantic_tokens(facet::semantic_tokens(input))
+                << "\n";
+      return 0;
+    }
+    if (emit == "directive") {
+      std::cout << format_directive(facet::read_kernel_directive(input))
                 << "\n";
       return 0;
     }

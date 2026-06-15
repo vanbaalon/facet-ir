@@ -13,6 +13,34 @@ LaTeX:    <LaTeX string>
 
 ---
 
+## 0. Surface Comments
+
+Plain comments are human-only surface trivia. They are stripped before parsing and do not appear in Core, Strict, Object, LaTeX, or kernel source output.
+
+```
+Surface:  x + # explain the next literal
+          1
+Core:     (+ x 1)
+LaTeX:    x + 1
+```
+
+Block comments use `#| ... |#` and can nest:
+
+```
+Surface:  x #| outer #| inner |# outer |# + 1
+Core:     (+ x 1)
+```
+
+Documentation that should survive as data uses `@ doc("...")` or top-level `#:` sugar:
+
+```
+Surface:  #: shifted squaring map
+          f := x |-> x^2
+Core:     (:= f (lam (binder x _) (^ x 2)) :doc "shifted squaring map")
+```
+
+---
+
 ## 1. Arithmetic and Algebra
 
 ### 1.1 Simple Addition
@@ -50,7 +78,7 @@ LaTeX:    x^{2}
 Surface:  -x + -1
 Strict:   +(neg(x), -1)
 Core:     (+ (neg x) -1)
-LaTeX:    -x + -1
+LaTeX:    -x - 1
 ```
 
 `-x` lowers to a `neg` Compound node. `-1` is lexed as a single integer token (the minus sign is attached to the digit, no whitespace between them).
@@ -801,12 +829,12 @@ The `emit=source:sympy` mode calls `print_sympy` and produces a string suitable 
 
 ```sh
 echo 'int[x : 0..1](sin(pi*x))' | facet emit=source:sympy
-# Integral(sin(pi*x), (x, 0, 1))
+# integrate(sin(pi*x), (x, 0, 1))
 ```
 
 ```sh
 echo 'sum[k : 1..n](k ^ 2)' | facet emit=source:sympy
-# Sum(k**2, (k, 1, n))
+# summation(k**2, (k, 1, n))
 ```
 
 The dependency-free Python source kernel is available as `emit=source:python`:
@@ -816,7 +844,29 @@ echo 'sin(x)^2 + sqrt(y)' | facet emit=source:python
 # math.sin(x)**2+math.sqrt(y)
 ```
 
-### 9.2 Reading SymPy srepr — Integral
+### 9.2 Kernel Directives
+
+Controller directives start with `%` and are intercepted before an expression is
+translated to kernel source:
+
+```facet
+%init(sympy, name="fast")
+%use(fast)
+factor(x^6 - 1)
+%kernels()
+```
+
+The CLI exposes the same classifier for notebook controllers:
+
+```sh
+echo '%use(fast)' | facet emit=directive
+# {"kind":"controller-directive","verb":"use","scoped":false,"args":[{"named":false,"value":"fast"}]}
+```
+
+Directives do not have Surface/Core/LaTeX projections as math; normal
+`read_surface` rejects them.
+
+### 9.3 Reading SymPy srepr — Integral
 
 From the test notebook (confirmed output):
 
@@ -830,7 +880,7 @@ Core:     (int (binder x (range 0 1)) (sin (* pi x)))
 LaTeX:    \int_{0}^{1} \sin\left(\pi x\right)\,dx
 ```
 
-### 9.3 Reading SymPy srepr — Derivative
+### 9.4 Reading SymPy srepr — Derivative
 
 From the test notebook (confirmed output):
 
@@ -846,7 +896,7 @@ LaTeX:    \frac{d^{}^{}}{dxdx} \sin\left(x\right)
 
 `Tuple(Symbol('x'), Integer(2))` means "differentiate with respect to x twice". The reader expands this to two repetitions of `x` in the `diff` node.
 
-### 9.4 Reading SymPy srepr — Product
+### 9.5 Reading SymPy srepr — Product
 
 From the test notebook (confirmed output):
 
@@ -860,7 +910,7 @@ Core:     (prod (binder x (range 1 n)) x)
 LaTeX:    \prod_{x = 1}^{n} x
 ```
 
-### 9.5 Reading SymPy srepr — Add, Mul, Pow
+### 9.6 Reading SymPy srepr — Add, Mul, Pow
 
 ```
 Input (sympy-srepr):
@@ -871,7 +921,7 @@ Surface:  x ^ 2 + 1
 LaTeX:    x^{2} + 1
 ```
 
-### 9.6 Reading SymPy srepr — Limit
+### 9.7 Reading SymPy srepr — Limit
 
 ```
 Input (sympy-srepr):
@@ -883,7 +933,7 @@ Surface:  lim[x -> 0](sin * x)
 
 (Note: `sin` here would be read as a bare symbol, not the function; actual SymPy limits over `sin(x)` use the full function form.)
 
-### 9.7 evaluate_sympy — Round-Trip Without Assumption
+### 9.8 evaluate_sympy — Round-Trip Without Assumption
 
 ```sh
 echo 'sqrt(x ^ 2)' | facet emit=source:sympy-core
@@ -892,7 +942,7 @@ echo 'sqrt(x ^ 2)' | facet emit=source:sympy-core
 
 When `:via sympy` is absent, `evaluate_sympy` performs a `print_sympy_srepr` round-trip without assumption injection.
 
-### 9.8 evaluate_sympy — With `@via(sympy)` and `@assume`
+### 9.9 evaluate_sympy — With `@via(sympy)` and `@assume`
 
 ```sh
 echo 'simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)' | facet emit=source:sympy-core
@@ -906,7 +956,7 @@ Workflow:
 4. Evaluates `simplify(sqrt(x**2))` in SymPy with the assumption.
 5. SymPy returns `x`; `read_sympy_srepr` reads `Symbol('x')` back as the Facet Sym node `x`.
 
-### 9.9 Assumption Mapping
+### 9.10 Assumption Mapping
 
 | FacetIR condition | SymPy Symbol keyword  |
 |-------------------|-----------------------|

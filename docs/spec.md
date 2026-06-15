@@ -166,6 +166,16 @@ The following multi-character sequences are recognised before any single-charact
 
 All other non-whitespace characters are single-character tokens: `(`, `)`, `[`, `]`, `{`, `}`, `,`, `;`, `:`, `|`, `+`, `-`, `*`, `/`, `^`, `@`, `=`, `<`, `>`, `.`, `_`, `\`.
 
+### 4.9 Comments
+
+Surface input accepts human-only comments:
+
+- `#` starts a line comment and runs to the end of the line.
+- `#|` starts a nestable block comment and `|#` closes it.
+- `#:` at the beginning of a surface input is documentation sugar for the following node; it lowers to a `:doc` attribute and is therefore data, not a comment.
+
+Plain comments are stripped before parsing. They are transparent to significant indentation: blank/comment-only lines do not emit layout tokens, trailing comments do not affect indentation, and multi-line block comments are masked before the INDENT/DEDENT pass. Comments are not preserved by non-surface projections.
+
 ---
 
 ## 5. Surface Projection
@@ -670,6 +680,33 @@ Rendering is an external output surface, not an intrinsic projection.
 | `render:pdf` | minimal valid PDF document |
 | `render:png` | deterministic PNG data URI |
 | `render:html` | HTML wrapper; `manipulate` emits a slider control |
+
+### 10.5 Kernel Directives
+
+Kernel directives are controller commands, not mathematical expressions. A
+top-level statement whose first tokens are `%` `<verb>` `(` is intercepted before
+kernel-source emission:
+
+```
+%use(fast)
+%init(sympy, name="fast")
+%init(remote, name="cloud", url="http://192.168.1.10:8765")
+%restart(fast)
+%kill(cloud)
+%kernels()
+%clear()
+%using(fast):
+    factor(x^6 - 1)
+```
+
+The closed directive vocabulary is `use`, `init`, `restart`, `kill`, `kernels`,
+`clear`, and `using`. Directives are never sent to a kernel and never appear in
+the intrinsic projections of an expression. The CLI exposes the classifier as
+`emit=directive`, which returns structured JSON for notebook controllers. Normal
+`read_surface` rejects directive lines.
+
+`@ via(name)` remains expression-scoped one-shot routing; `%use(name)` changes
+the controller's session default, and `%using(name):` changes it for a block.
 
 ## 11. SymPy Bridge
 

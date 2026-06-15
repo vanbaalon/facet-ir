@@ -390,12 +390,52 @@ private:
   Arena& arena_;
   TokenCursor lex_;
 
+  // Returns true when `tok` can begin a primary expression and therefore
+  // supports implicit multiplication after a numeric literal.
+  static bool is_primary_start(const internal::Tok& tok) {
+    if (tok.eof) return false;
+    const std::string& t = tok.text;
+    // Closers and infix-only tokens cannot start a primary.
+    if (t == ")" || t == "]" || t == "}" || t == "," || t == ":" ||
+        t == "|" || t == ";" ||
+        t == ".." || t == "@" || t == "~>" || t == "|->")
+      return false;
+    // Binary-only operators (note: "-" is excluded because it doubles as unary).
+    if (t == "+" || t == "*" || t == "/" || t == "^" ||
+        t == "=" || t == "!=" || t == ">" || t == ">=" ||
+        t == "<" || t == "<=" || t == ":=" || t == "<-")
+      return false;
+    // Meta/guard keywords that follow expressions — never a primary start.
+    if (t == "when" || t == "via" || t == "assume" || t == "in" ||
+        t == "else" || t == "rule" || t == "goal")
+      return false;
+    // Anything else (identifier, number, string, "-", "(", "[", "{") can.
+    return true;
+  }
+
   Ref expr(int min_prec) {
     Ref lhs = primary();
     while (!lex_.peek().eof) {
       std::string op = lex_.peek().text;
       int prec = prec_of(op);
       if (prec < min_prec) {
+        // Implicit multiplication: handles `2 x`, `2(x+1)`, `3 pi`, `2 sin(x)`,
+        // and `y exp(...)` where y is a session variable (sym * call).
+        // Function calls `f(x)` are consumed in primary() so by the time we reach
+        // here, a Sym lhs has no `(` following — implicit mul is unambiguous.
+        const bool numeric_lhs = (lhs->tag == Tag::Int ||
+                                  lhs->tag == Tag::Rat ||
+                                  lhs->tag == Tag::Real);
+        const bool sym_lhs = (lhs->tag == Tag::Sym);
+        // Continue if we're already inside an implicit-multiply chain
+        // (the lhs was itself produced by `*`), so `2 pi x` = `2*pi*x`.
+        const bool mul_chain = (lhs->tag == Tag::Compound && lhs->text == "*");
+        constexpr int mul_prec = 60; // same as explicit *
+        if ((numeric_lhs || sym_lhs || mul_chain) && mul_prec >= min_prec && is_primary_start(lex_.peek())) {
+          Ref rhs = expr(mul_prec + 1);
+          lhs = arena_.compound("*", {lhs, rhs});
+          continue;
+        }
         break;
       }
       lex_.expect();
@@ -461,7 +501,11 @@ private:
       return arena_.compound("broadcast",
                              {arena_.sym(t), arena_.compound("args", args)});
     }
-    if (lex_.take("(")) {
+    // Numeric literals followed by `(` are NOT function calls — they yield
+    // implicit multiplication handled by the expr() loop (e.g. `2(x+1)`).
+    const bool t_is_numeric = !t.empty() && (std::isdigit(static_cast<unsigned char>(t[0])) ||
+                                             (t[0] == '-' && t.size() > 1 && std::isdigit(static_cast<unsigned char>(t[1]))));
+    if (!t_is_numeric && lex_.take("(")) {
       std::vector<Ref> args;
       if (!lex_.take(")")) {
         do {
@@ -1177,7 +1221,8 @@ std::string latex_atom(Ref ref) {
       {"pi", "\\pi"},       {"alpha", "\\alpha"},   {"beta", "\\beta"},
       {"gamma", "\\gamma"}, {"delta", "\\delta"},   {"epsilon", "\\epsilon"},
       {"theta", "\\theta"}, {"lambda", "\\lambda"}, {"mu", "\\mu"},
-      {"nu", "\\nu"},       {"sigma", "\\sigma"},   {"omega", "\\omega"}};
+      {"nu", "\\nu"},       {"sigma", "\\sigma"},   {"omega", "\\omega"},
+      {"inf", "\\infty"},   {"infinity", "\\infty"}};
   auto it = symbols.find(ref->text);
   return it != symbols.end() ? it->second : ref->text;
 }
@@ -1376,6 +1421,39 @@ std::string print_latex_prec(Ref ref, int parent_prec) {
   if (ref->text == "/" && ref->args.size() == 2) {
     return "\\frac{" + print_latex_prec(ref->args[0], 0) + "}{" +
            print_latex_prec(ref->args[1], 0) + "}";
+  }
+  // (+ A <negative-term>) → "A - ..." to avoid ugly "A + -1" from SymPy srepr
+  if (ref->text == "+" && ref->args.size() == 2) {
+    Ref rhs = ref->args[1];
+    auto is_neg_lit = [](Ref r) {
+      return (r->tag == Tag::Int || r->tag == Tag::Real) &&
+             !r->text.empty() && r->text[0] == '-';
+    };
+    int add_prec = lookup_op("+")->prec;
+    // Case 1: rhs is a negative Int/Real literal  e.g. (+ x -1)
+    if (is_neg_lit(rhs)) {
+      std::string out = print_latex_prec(ref->args[0], add_prec) +
+                        " - " + rhs->text.substr(1);
+      return latex_wrap(out, add_prec, parent_prec);
+    }
+    // Case 2: rhs is (neg B)  e.g. (+ x (neg y)) = x - y
+    if (rhs->tag == Tag::Compound && rhs->text == "neg" && rhs->args.size() == 1) {
+      std::string out = print_latex_prec(ref->args[0], add_prec) +
+                        " - " + print_latex_prec(rhs->args[0], add_prec + 1);
+      return latex_wrap(out, add_prec, parent_prec);
+    }
+    // Case 3: rhs is (* <neg-lit> B)  e.g. (+ x (* -2 y)) = x - 2y
+    if (rhs->tag == Tag::Compound && rhs->text == "*" && rhs->args.size() == 2 &&
+        is_neg_lit(rhs->args[0])) {
+      std::string coeff = rhs->args[0]->text.substr(1);
+      std::string body  = print_latex_prec(rhs->args[1], add_prec + 1);
+      std::string rhs_s = (coeff == "1") ? body : coeff + " " + body;
+      std::string out = print_latex_prec(ref->args[0], add_prec) + " - " + rhs_s;
+      return latex_wrap(out, add_prec, parent_prec);
+    }
+    std::string out = print_latex_prec(ref->args[0], add_prec) + " + " +
+                      print_latex_prec(ref->args[1], add_prec + 1);
+    return latex_wrap(out, add_prec, parent_prec);
   }
   if (const internal::OpInfo* op = lookup_op(ref->text);
       op && ref->args.size() == 2 && ref->text != "range") {
@@ -2053,9 +2131,37 @@ std::string object_inner(Ref ref) {
 
 bool starts_with_do_block(const std::string& input) {
   std::size_t pos = 0;
-  while (pos < input.size() &&
-         std::isspace(static_cast<unsigned char>(input[pos]))) {
-    ++pos;
+  while (pos < input.size()) {
+    if (std::isspace(static_cast<unsigned char>(input[pos]))) {
+      ++pos;
+      continue;
+    }
+    if (input.compare(pos, 2, "#|") == 0) {
+      int depth = 1;
+      pos += 2;
+      while (pos < input.size() && depth > 0) {
+        if (input.compare(pos, 2, "#|") == 0) {
+          pos += 2;
+          ++depth;
+        } else if (input.compare(pos, 2, "|#") == 0) {
+          pos += 2;
+          --depth;
+        } else {
+          ++pos;
+        }
+      }
+      if (depth != 0) {
+        throw Error("unterminated block comment before do block");
+      }
+      continue;
+    }
+    if (input[pos] == '#') {
+      while (pos < input.size() && input[pos] != '\n') {
+        ++pos;
+      }
+      continue;
+    }
+    break;
   }
   if (input.compare(pos, 2, "do") != 0) {
     return false;
@@ -2067,6 +2173,102 @@ bool starts_with_do_block(const std::string& input) {
     ++pos;
   }
   return pos < input.size() && input[pos] == ':';
+}
+
+std::string trim_doc_text(std::string text) {
+  std::size_t first = text.find_first_not_of(" \t\r");
+  if (first == std::string::npos) {
+    return "";
+  }
+  std::size_t last = text.find_last_not_of(" \t\r");
+  return text.substr(first, last - first + 1);
+}
+
+std::pair<std::string, std::string> peel_leading_doc_sugar(
+    const std::string& input) {
+  std::size_t pos = 0;
+  std::vector<std::string> docs;
+  while (true) {
+    std::size_t line_start = pos;
+    while (line_start < input.size() &&
+           (input[line_start] == ' ' || input[line_start] == '\t' ||
+            input[line_start] == '\r')) {
+      ++line_start;
+    }
+    if (input.compare(line_start, 2, "#:") != 0) {
+      break;
+    }
+    std::size_t text_start = line_start + 2;
+    std::size_t line_end = input.find('\n', text_start);
+    if (line_end == std::string::npos) {
+      docs.push_back(trim_doc_text(input.substr(text_start)));
+      pos = input.size();
+      break;
+    }
+    docs.push_back(trim_doc_text(input.substr(text_start,
+                                             line_end - text_start)));
+    pos = line_end + 1;
+  }
+  return {join(docs, "\n"), input.substr(pos)};
+}
+
+Ref attach_doc_sugar(Arena& arena, Ref ref, const std::string& doc) {
+  if (doc.empty()) {
+    return ref;
+  }
+  Ref value = arena.string(doc);
+  if (ref->tag == Tag::Compound) {
+    std::vector<Attr> attrs = ref->attrs;
+    attrs.push_back({"doc", value});
+    return arena.compound(ref->text, ref->args, std::move(attrs));
+  }
+  return arena.compound("@", {ref, arena.compound("doc", {value})});
+}
+
+std::string directive_value_from_token(const std::string& token) {
+  if (is_string_token(token)) {
+    return token.substr(1, token.size() - 2);
+  }
+  return token;
+}
+
+bool is_directive_verb(const std::string& verb) {
+  static const std::unordered_set<std::string> verbs = {
+      "use", "init", "restart", "kill", "kernels", "clear", "using"};
+  return verbs.find(verb) != verbs.end();
+}
+
+void check_directive_arity(const KernelDirective& directive) {
+  std::size_t positional = 0;
+  for (const auto& arg : directive.args) {
+    if (!arg.named) {
+      ++positional;
+    }
+  }
+  auto fail = [&]() {
+    throw Error("invalid %" + directive.verb + " directive arguments");
+  };
+  if (directive.verb == "use" || directive.verb == "kill" ||
+      directive.verb == "using") {
+    if (positional != 1) {
+      fail();
+    }
+  } else if (directive.verb == "init") {
+    if (positional != 1) {
+      fail();
+    }
+  } else if (directive.verb == "restart" || directive.verb == "clear") {
+    if (positional > 1) {
+      fail();
+    }
+  } else if (directive.verb == "kernels") {
+    if (positional != 0 || !directive.args.empty()) {
+      fail();
+    }
+  }
+  if (directive.verb == "using" && !directive.scoped) {
+    throw Error("%using directive requires ':' and an indented block");
+  }
 }
 
 } // namespace
@@ -2084,10 +2286,19 @@ Ref read_strict(Arena& arena, const std::string& input) {
 std::string print_strict(Ref ref) { return print_strict_inner(ref); }
 
 Ref read_surface(Arena& arena, const std::string& input) {
-  if (starts_with_do_block(input)) {
-    return StatementParser(arena, input).parse();
+  if (is_kernel_directive(input)) {
+    throw Error("kernel directive is not a surface expression; handle it in "
+                "the controller");
   }
-  return SurfaceParser(arena, input).parse();
+  auto [doc, body] = peel_leading_doc_sugar(input);
+  const std::string& parse_input = doc.empty() ? input : body;
+  Ref ref = nullptr;
+  if (starts_with_do_block(parse_input)) {
+    ref = StatementParser(arena, parse_input).parse();
+  } else {
+    ref = SurfaceParser(arena, parse_input).parse();
+  }
+  return attach_doc_sugar(arena, ref, doc);
 }
 
 std::string print_surface(Ref ref) { return print_surface_prec(ref, 0); }
@@ -2104,6 +2315,70 @@ std::vector<Diagnostic> validate(Ref ref) {
   std::vector<Diagnostic> out;
   validate_walk(ref, out);
   return out;
+}
+
+bool is_kernel_directive(const std::string& surface_input) {
+  std::vector<internal::Tok> toks = lex_surface_tokens(surface_input);
+  return toks.size() >= 4 && toks[0].text == "%" &&
+         is_identifier_token(toks[1].text) && toks[2].text == "(";
+}
+
+KernelDirective read_kernel_directive(const std::string& surface_input) {
+  std::vector<internal::Tok> toks = lex_surface_tokens(surface_input);
+  if (!(toks.size() >= 4 && toks[0].text == "%" &&
+        is_identifier_token(toks[1].text) && toks[2].text == "(")) {
+    throw Error("expected kernel directive %verb(...)");
+  }
+  KernelDirective directive;
+  directive.verb = toks[1].text;
+  if (!is_directive_verb(directive.verb)) {
+    throw Error("unknown kernel directive %" + directive.verb);
+  }
+  std::size_t pos = 3;
+  if (pos < toks.size() && toks[pos].text != ")") {
+    while (true) {
+      if (pos >= toks.size() || toks[pos].eof) {
+        throw Error("unterminated kernel directive %" + directive.verb);
+      }
+      DirectiveArg arg;
+      if (is_identifier_token(toks[pos].text) && pos + 1 < toks.size() &&
+          toks[pos + 1].text == "=") {
+        arg.named = true;
+        arg.key = toks[pos].text;
+        pos += 2;
+      }
+      if (pos >= toks.size() || toks[pos].eof || toks[pos].text == ")" ||
+          toks[pos].text == "," || toks[pos].text == "=") {
+        throw Error("expected literal argument in kernel directive %" +
+                    directive.verb);
+      }
+      if (!(is_identifier_token(toks[pos].text) || is_int_token(toks[pos].text) ||
+            is_real_token(toks[pos].text) || is_string_token(toks[pos].text))) {
+        throw Error("kernel directive arguments must be literal values");
+      }
+      arg.value = directive_value_from_token(toks[pos].text);
+      directive.args.push_back(std::move(arg));
+      ++pos;
+      if (pos < toks.size() && toks[pos].text == ",") {
+        ++pos;
+        continue;
+      }
+      break;
+    }
+  }
+  if (pos >= toks.size() || toks[pos].text != ")") {
+    throw Error("expected ')' in kernel directive %" + directive.verb);
+  }
+  ++pos;
+  if (pos < toks.size() && toks[pos].text == ":") {
+    directive.scoped = true;
+    ++pos;
+  }
+  if (pos >= toks.size() || !toks[pos].eof) {
+    throw Error("trailing input after kernel directive %" + directive.verb);
+  }
+  check_directive_arity(directive);
+  return directive;
 }
 
 std::vector<SemanticToken> semantic_tokens(const std::string& surface_input) {
@@ -2165,10 +2440,29 @@ bool contains_unclosed(const std::string& text, char open, char close) {
 
 std::vector<CompletionItem> completions(const std::string& surface_input,
                                         std::size_t cursor_offset) {
-  std::string prefix = prefix_before(surface_input, cursor_offset);
+  std::size_t clamped = clamp_offset(surface_input, cursor_offset);
+  std::string prefix = surface_input.substr(0, clamped);
   char last = last_nonspace(prefix);
   bool after_context = last == '@';
   bool in_brackets = contains_unclosed(prefix, '[', ']');
+
+  // Word fragment immediately before cursor (for prefix filtering)
+  std::size_t word_start = clamped;
+  while (word_start > 0) {
+    char c = surface_input[word_start - 1];
+    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') break;
+    --word_start;
+  }
+  std::string word = surface_input.substr(word_start, clamped - word_start);
+
+  // Only show completions when the user is actively typing a word,
+  // or right after an open delimiter/@ that has a defined context.
+  static constexpr std::string_view open_triggers = "@[({,";
+  const bool at_open = open_triggers.find(last) != std::string_view::npos;
+  if (word.empty() && !at_open) {
+    return {};
+  }
+
   std::vector<CompletionItem> out;
 
   if (after_context) {
@@ -2221,6 +2515,16 @@ std::vector<CompletionItem> completions(const std::string& surface_input,
                                   "~>", "=", ">=", "<=", "!="}) {
       add_completion(out, op, "Operator", op, "Facet surface operator.");
     }
+  }
+
+  if (!word.empty()) {
+    out.erase(std::remove_if(out.begin(), out.end(),
+                             [&](const CompletionItem& item) {
+                               return item.label.size() < word.size() ||
+                                      item.label.compare(0, word.size(),
+                                                         word) != 0;
+                             }),
+              out.end());
   }
   return out;
 }

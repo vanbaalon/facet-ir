@@ -18,6 +18,8 @@ FacetIR is a C++ library and CLI tool that provides a single abstract syntax tre
 
 **Bridging human notation and machine-readable form.** Surface notation is designed to be typed at a keyboard without special symbols: `int[x : 0..1](sin(pi*x))`, `forall[x : R](x^2 >= 0)`, `rule pyth: sin(?a)^2 + cos(?a)^2 ~> 1`. Context metadata is attached inline with `@`: `simplify(expr) @ assume(x >= 0) @ via(sympy)`. All of this sugar is lowered to a small set of core node types.
 
+**Human-only comments.** Surface input accepts `#` line comments and nestable `#| ... |#` block comments. They are stripped before parsing and never appear in core, strict, object, LaTeX, or kernel source. Documentation that should survive as data uses `@ doc("...")`, or top-level `#: ...` doc sugar on the following expression.
+
 **Kernels for computation.** FacetIR projections are intrinsic and lossless; external systems such as SymPy are kernels. The SymPy bridge can emit kernel source, evaluate expressions via Python's SymPy CAS, and read results back into the arena. Assumptions expressed as FacetIR predicates (`x >= 0`) are automatically translated to SymPy `Symbol` keyword arguments.
 
 ---
@@ -49,7 +51,7 @@ facet [read=MODE] [emit=MODE] [compare=EXPR] [by=MODE] < input
 
 Compatibility read alias: `sympy-srepr`.
 
-**Emit modes:** `surface`, `strict`, `core`, `object`, `latex`, `semantic-tokens`, `completions:N`, `hover:N`, `signature:N`, `diagnostics`, `render:svg`, `render:pdf`, `render:png`, `render:html`, `coverage:K`, `source:K`, `source:sympy-srepr`, `source:sympy-core`
+**Emit modes:** `surface`, `strict`, `core`, `object`, `latex`, `directive`, `semantic-tokens`, `completions:N`, `hover:N`, `signature:N`, `diagnostics`, `render:svg`, `render:pdf`, `render:png`, `render:html`, `coverage:K`, `source:K`, `source:sympy-srepr`, `source:sympy-core`
 
 Language-server mode: `facet --lsp` speaks stdio JSON-RPC for semantic tokens, completions, hover, signature help, and diagnostics.
 
@@ -64,6 +66,14 @@ Parse surface notation and emit core S-expression (default):
 ```sh
 echo 'int[x : 0..1](sin(pi*x))' | facet
 # (int (binder x (range 0 1)) (sin (* pi x)))
+```
+
+Comments are human-surface trivia:
+
+```sh
+echo 'x + # explain the next literal
+1' | facet
+# (+ x 1)
 ```
 
 Emit LaTeX:
@@ -94,6 +104,13 @@ Evaluate via SymPy and return core:
 echo 'simplify(sqrt(x^2)) @ assume(x >= 0) @ via(sympy)' | facet emit=source:sympy-core
 ```
 
+Classify a controller directive before kernel evaluation:
+
+```sh
+echo '%use(fast)' | facet emit=directive
+# {"kind":"controller-directive","verb":"use","scoped":false,"args":[{"named":false,"value":"fast"}]}
+```
+
 Compare with labelled evidence:
 
 ```sh
@@ -116,6 +133,7 @@ echo 'sin(x)^2 + cos(x)^2' \
 
 External kernel source/evaluation modes are intentionally separate from the five projections. The built-in SymPy bridge is available as `read=source:sympy-srepr` and `emit=source:sympy*`.
 The dependency-free Python source kernel is available as `emit=source:python`.
+Notebook kernel lifecycle directives such as `%use(fast)` and `%init(sympy, name="fast")` are controller commands, not math expressions; see [Facet Kernels](docs/kernels.md).
 
 ---
 
@@ -155,3 +173,4 @@ Object:
 
 - [Language Specification](docs/spec.md) — formal grammar, operator table, projection rules, SymPy bridge.
 - [Examples](docs/examples.md) — annotated examples for every feature: arithmetic, calculus, logic, sets, indexing, pattern matching, context chaining, and the SymPy bridge.
+- [Kernels](docs/kernels.md) — persistent SymPy daemon, remote HTTP kernels, lifecycle management (init / set active / restart / kill), session variables, per-cell override.

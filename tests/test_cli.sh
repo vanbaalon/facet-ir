@@ -29,7 +29,7 @@ expect_contains() {
   esac
 }
 
-EXPECT='Integral(sin(pi*x), (x, 0, 1))'
+EXPECT='integrate(sin(pi*x), (x, 0, 1))'
 expect "source:sympy alias" 'int[x : 0..1](sin(pi*x))' emit=source:sympy
 
 EXPECT='(int (binder x (range 0 1)) (sin (* pi x)))'
@@ -49,12 +49,21 @@ expect "signature help CLI" 'point(1, 2)' emit=signature:8
 EXPECT='[{"label":"assume","kind":"Keyword","detail":"assume(condition)","documentation":"Attach assumptions for kernel evaluation."},{"label":"via","kind":"Keyword","detail":"via(kernel)","documentation":"Select an external kernel."},{"label":"style","kind":"Property","detail":"style(key=value, ...)","documentation":"Attach rendering style metadata."},{"label":"render","kind":"Property","detail":"render(format=...)","documentation":"Attach rendering metadata."}]'
 expect "completions CLI" 'simplify(x) @' emit=completions:13
 
+EXPECT='{"kind":"controller-directive","verb":"init","scoped":false,"args":[{"named":false,"value":"remote"},{"named":true,"key":"name","value":"cloud"},{"named":true,"key":"url","value":"http://x"}]}'
+expect "kernel directive CLI" '%init(remote, name="cloud", url="http://x")' emit=directive
+
 lsp_init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 lsp_msg="$(printf 'Content-Length: %s\r\n\r\n%s' "${#lsp_init}" "$lsp_init")"
 expect_contains "lsp initialize" "$lsp_msg" '"semanticTokensProvider"' --lsp
 
 EXPECT='math.sin(x)**2+math.sqrt(y)'
 expect "source python CLI" 'sin(x)^2 + sqrt(y)' emit=source:python
+
+EXPECT='(+ x 1)'
+expect "surface comments CLI" '# leading comment
+x + # inline comment
+1 # trailing comment
+' emit=core
 
 EXPECT='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
 expect "render png CLI" 'plot3d[x : 0..1](x^2)' emit=render:png

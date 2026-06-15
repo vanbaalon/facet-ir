@@ -41,6 +41,9 @@ private:
   Tok tok_;
 
   char advance();
+  void skip_whitespace_and_comments();
+  void skip_line_comment();
+  void skip_block_comment();
   void next();
   std::string location() const;
 };

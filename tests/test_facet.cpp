@@ -438,17 +438,17 @@ void latex_examples() {
 void sympy_examples() {
   Arena arena;
   check_eq(print_sympy(read_surface(arena, "int[x : 0..1](sin(pi*x))")),
-           "Integral(sin(pi*x), (x, 0, 1))", "sympy integral");
+           "integrate(sin(pi*x), (x, 0, 1))", "sympy integral");
   check_eq(print_sympy(read_surface(arena, "sum[x : 0..1](x * 2 + 1)")),
-           "Sum(x*2+1, (x, 0, 1))", "sympy finite sum");
+           "summation(x*2+1, (x, 0, 1))", "sympy finite sum");
   check_eq(print_sympy(read_surface(arena, "sqrt(x^2)")),
            "sqrt(x**2)", "sympy sqrt power");
   check_eq(print_sympy(read_surface(arena, "x |-> x^2")),
            "Lambda(x, x**2)", "sympy lambda");
   check_eq(print_sympy(read_surface(arena, "prod[x : 1..n](x)")),
-           "Product(x, (x, 1, n))", "sympy product");
+           "Product(x, (x, 1, n)).doit()", "sympy product");
   check_eq(print_sympy(read_surface(arena, "lim[x -> 0](sin(x) / x)")),
-           "Limit(sin(x)/x, x, 0)", "sympy limit");
+           "limit(sin(x)/x, x, 0)", "sympy limit");
   check_eq(print_sympy(read_surface(arena, "diff[x, x](sin(x))")),
            "diff(sin(x), x, x)", "sympy derivative");
   check_eq(print_sympy(read_surface(arena, "x >= 0")),
@@ -850,6 +850,110 @@ void layout_lexer_tests() {
         (void)layout_text("do:\n\treturn x\n");
       },
       "tabs are not allowed", "layout lexer rejects tabs in indentation");
+}
+
+void comment_syntax_tests() {
+  Arena arena;
+  check_eq(print_core(read_surface(arena, "x + 1 # trailing comment")),
+           "(+ x 1)", "surface strips trailing line comments");
+  check_eq(print_core(read_surface(arena,
+                                   "# whole line\nx + # between operands\n1")),
+           "(+ x 1)", "surface strips standalone line comments");
+  check_eq(print_core(read_surface(arena,
+                                   "x #| outer #| inner |# done |# + 1")),
+           "(+ x 1)", "surface strips nested block comments");
+  check_eq(print_core(read_surface(arena,
+                                   "#: shifted squaring map\nf := x |-> x^2")),
+           "(:= f (lam (binder x _) (^ x 2)) :doc \"shifted squaring map\")",
+           "doc sugar attaches doc attribute to following node");
+
+  check_eq(layout_text("do:\n    # comment-only line\n    return x # tail\n"),
+           "do : NEWLINE INDENT return x NEWLINE DEDENT",
+           "layout skips comment-only and trailing comment text");
+  check_eq(layout_text("do:\n    #| hidden\n       block |#\n    return x\n"),
+           "do : NEWLINE INDENT return x NEWLINE DEDENT",
+           "layout skips multi-line block comments");
+  check_eq(print_core(read_surface(arena,
+                                   "# leading trivia\n"
+                                   "do:\n"
+                                   "    return x\n")),
+           "(do (return x))",
+           "surface do block accepts leading comments");
+
+  std::vector<SemanticToken> toks = semantic_tokens("x # comment\n+ 1");
+  check_eq(std::to_string(toks.size()), "3",
+           "semantic tokens omit line comments");
+  if (toks.size() == 3) {
+    check_eq(toks[1].type, "operator",
+             "semantic tokens continue after comment newline");
+    check_eq(std::to_string(toks[1].offset), "12",
+             "semantic tokens preserve offsets after comments");
+  }
+
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_surface(a, "x + #| missing close");
+      },
+      "unterminated block comment",
+      "surface rejects unterminated block comment");
+  check_throws_contains(
+      []() {
+        (void)layout_text("do:\n    #| missing close\n");
+      },
+      "unterminated block comment",
+      "layout rejects unterminated block comment");
+}
+
+void kernel_directive_tests() {
+  check(is_kernel_directive("%use(fast)"),
+        "kernel directive recognises percent verb call");
+  check(!is_kernel_directive("% + 1"),
+        "plain percent placeholder is not a directive");
+
+  KernelDirective use = read_kernel_directive("%use(fast)");
+  check_eq(use.verb, "use", "kernel directive parses verb");
+  check_eq(std::to_string(use.args.size()), "1",
+           "kernel directive parses positional arg count");
+  if (use.args.size() == 1) {
+    check(!use.args[0].named, "kernel directive records positional arg");
+    check_eq(use.args[0].value, "fast",
+             "kernel directive parses positional arg value");
+  }
+
+  KernelDirective init =
+      read_kernel_directive("%init(remote, name=\"cloud\", url=\"http://x\")");
+  check_eq(init.verb, "init", "kernel directive parses init");
+  check_eq(std::to_string(init.args.size()), "3",
+           "kernel directive parses named args");
+  if (init.args.size() == 3) {
+    check_eq(init.args[1].key, "name", "kernel directive named key");
+    check_eq(init.args[1].value, "cloud", "kernel directive unquotes string");
+    check_eq(init.args[2].key, "url", "kernel directive parses url key");
+    check_eq(init.args[2].value, "http://x",
+             "kernel directive parses url value");
+  }
+
+  KernelDirective scoped = read_kernel_directive("%using(cloud):");
+  check(scoped.scoped, "kernel directive parses scoped using colon");
+
+  check_throws_contains(
+      []() {
+        Arena a;
+        (void)read_surface(a, "%use(fast)");
+      },
+      "kernel directive is not a surface expression",
+      "surface parser rejects controller directives");
+  check_throws_contains(
+      []() {
+        (void)read_kernel_directive("%unknown(fast)");
+      },
+      "unknown kernel directive", "kernel directive rejects unknown verb");
+  check_throws_contains(
+      []() {
+        (void)read_kernel_directive("%using(fast)");
+      },
+      "requires ':'", "kernel directive requires colon for using");
 }
 
 void semantic_token_tests() {
@@ -1334,6 +1438,8 @@ int main() {
   diagnostics_include_locations();
   validator_warnings();
   layout_lexer_tests();
+  comment_syntax_tests();
+  kernel_directive_tests();
   semantic_token_tests();
   language_info_tests();
   minimal_do_blocks();

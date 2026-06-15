@@ -53,11 +53,56 @@ std::string Lexer::location() const {
   return out.str();
 }
 
-void Lexer::next() {
-  while (pos_ < input_.size() &&
-         std::isspace(static_cast<unsigned char>(input_[pos_]))) {
+void Lexer::skip_line_comment() {
+  while (pos_ < input_.size() && input_[pos_] != '\n') {
     advance();
   }
+}
+
+void Lexer::skip_block_comment() {
+  std::size_t start_line = line_;
+  std::size_t start_column = column_;
+  advance();
+  advance();
+  int depth = 1;
+  while (pos_ < input_.size() && depth > 0) {
+    if (input_.compare(pos_, 2, "#|") == 0) {
+      advance();
+      advance();
+      ++depth;
+      continue;
+    }
+    if (input_.compare(pos_, 2, "|#") == 0) {
+      advance();
+      advance();
+      --depth;
+      continue;
+    }
+    advance();
+  }
+  if (depth != 0) {
+    throw Error("unterminated block comment at line " +
+                std::to_string(start_line) + ", column " +
+                std::to_string(start_column));
+  }
+}
+
+void Lexer::skip_whitespace_and_comments() {
+  while (pos_ < input_.size() &&
+         (std::isspace(static_cast<unsigned char>(input_[pos_])) ||
+          input_[pos_] == '#')) {
+    if (std::isspace(static_cast<unsigned char>(input_[pos_]))) {
+      advance();
+    } else if (input_.compare(pos_, 2, "#|") == 0) {
+      skip_block_comment();
+    } else {
+      skip_line_comment();
+    }
+  }
+}
+
+void Lexer::next() {
+  skip_whitespace_and_comments();
   std::size_t token_offset = pos_;
   std::size_t token_line = line_;
   std::size_t token_column = column_;
@@ -166,9 +211,81 @@ void push_layout(std::vector<LayoutTok>& out, std::string text,
   out.push_back({std::move(text), offset, line, column});
 }
 
+std::string mask_comments_for_layout(const std::string& input) {
+  std::string out = input;
+  std::size_t pos = 0;
+  std::size_t line = 1;
+  std::size_t column = 1;
+  int block_depth = 0;
+  std::size_t block_line = 1;
+  std::size_t block_column = 1;
+  while (pos < out.size()) {
+    if (block_depth == 0 && out.compare(pos, 2, "#|") == 0) {
+      block_line = line;
+      block_column = column;
+      out[pos] = ' ';
+      out[pos + 1] = ' ';
+      pos += 2;
+      column += 2;
+      ++block_depth;
+      continue;
+    }
+    if (block_depth == 0 && out[pos] == '#') {
+      while (pos < out.size() && out[pos] != '\n') {
+        out[pos] = ' ';
+        ++pos;
+        ++column;
+      }
+      continue;
+    }
+    if (block_depth > 0) {
+      if (out.compare(pos, 2, "#|") == 0) {
+        out[pos] = ' ';
+        out[pos + 1] = ' ';
+        pos += 2;
+        column += 2;
+        ++block_depth;
+        continue;
+      }
+      if (out.compare(pos, 2, "|#") == 0) {
+        out[pos] = ' ';
+        out[pos + 1] = ' ';
+        pos += 2;
+        column += 2;
+        --block_depth;
+        continue;
+      }
+      if (out[pos] == '\n') {
+        ++pos;
+        ++line;
+        column = 1;
+      } else {
+        out[pos] = ' ';
+        ++pos;
+        ++column;
+      }
+      continue;
+    }
+    if (out[pos] == '\n') {
+      ++pos;
+      ++line;
+      column = 1;
+    } else {
+      ++pos;
+      ++column;
+    }
+  }
+  if (block_depth != 0) {
+    throw Error("unterminated block comment at " +
+                location(block_line, block_column));
+  }
+  return out;
+}
+
 } // namespace
 
 std::vector<LayoutTok> lex_layout_for_test(const std::string& input) {
+  std::string visible = mask_comments_for_layout(input);
   std::vector<LayoutTok> out;
   std::vector<std::size_t> indents{0};
   bool pending_block = false;
@@ -176,16 +293,16 @@ std::vector<LayoutTok> lex_layout_for_test(const std::string& input) {
   std::size_t line_no = 1;
   std::size_t pos = 0;
 
-  while (pos <= input.size()) {
+  while (pos <= visible.size()) {
     std::size_t line_start = pos;
-    std::size_t line_end = input.find('\n', pos);
+    std::size_t line_end = visible.find('\n', pos);
     bool final_line = line_end == std::string::npos;
     if (final_line) {
-      line_end = input.size();
+      line_end = visible.size();
     }
-    pos = final_line ? input.size() + 1 : line_end + 1;
+    pos = final_line ? visible.size() + 1 : line_end + 1;
 
-    std::string_view raw(input.data() + line_start, line_end - line_start);
+    std::string_view raw(visible.data() + line_start, line_end - line_start);
     raw = rtrim(raw);
     std::size_t indent = 0;
     while (indent < raw.size() && raw[indent] == ' ') {
@@ -256,7 +373,7 @@ std::vector<LayoutTok> lex_layout_for_test(const std::string& input) {
   }
   while (indents.size() > 1) {
     indents.pop_back();
-    push_layout(out, "DEDENT", input.size(), line_no, 1);
+    push_layout(out, "DEDENT", visible.size(), line_no, 1);
   }
   return out;
 }

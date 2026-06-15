@@ -60,8 +60,9 @@ bool is_binder_head(const std::string& head) {
 
 bool is_known_nonindexed_function(const std::string& head) {
   static const std::unordered_set<std::string> heads = {
-      "sin", "cos", "tan", "log", "exp", "sqrt", "det", "tr",
-      "simplify", "expand",
+      "sin", "cos", "tan", "log", "exp", "sqrt", "abs", "det", "tr",
+      "erf", "erfc", "gamma", "factorial",
+      "simplify", "expand", "factor",
   };
   return heads.find(head) != heads.end();
 }

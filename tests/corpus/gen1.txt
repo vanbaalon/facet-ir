@@ -3,7 +3,7 @@ surface: int[x : 0..1](sin(pi*x))
 strict: int(binder(x, range(0, 1)), sin(*(pi, x)))
 core: (int (binder x (range 0 1)) (sin (* pi x)))
 latex: \int_{0}^{1} \sin\left(\pi x\right)\,dx
-sympy: Integral(sin(pi*x), (x, 0, 1))
+sympy: integrate(sin(pi*x), (x, 0, 1))
 sympy_srepr: Integral(sin(Mul(pi, Symbol('x'))), Tuple(Symbol('x'), Integer(0), Integer(1)))
 ---
 case: lambda_definition
@@ -16,7 +16,7 @@ case: unary_minus
 surface: -x + -1
 strict: +(neg(x), -1)
 core: (+ (neg x) -1)
-latex: -x + -1
+latex: -x - 1
 sympy: -x+-1
 sympy_srepr: Add(Mul(Integer(-1), Symbol('x')), Integer(-1))
 ---
@@ -49,7 +49,7 @@ surface: sum[x : 0..1](x * 2 + 1)
 strict: sum(binder(x, range(0, 1)), +(*(x, 2), 1))
 core: (sum (binder x (range 0 1)) (+ (* x 2) 1))
 latex: \sum_{x = 0}^{1} x 2 + 1
-sympy: Sum(x*2+1, (x, 0, 1))
+sympy: summation(x*2+1, (x, 0, 1))
 sympy_srepr: Sum(Add(Mul(Symbol('x'), Integer(2)), Integer(1)), Tuple(Symbol('x'), Integer(0), Integer(1)))
 ---
 case: finite_product
@@ -57,7 +57,7 @@ surface: prod[x : 1..n](x)
 strict: prod(binder(x, range(1, n)), x)
 core: (prod (binder x (range 1 n)) x)
 latex: \prod_{x = 1}^{n} x
-sympy: Product(x, (x, 1, n))
+sympy: Product(x, (x, 1, n)).doit()
 sympy_srepr: Product(Symbol('x'), Tuple(Symbol('x'), Integer(1), Symbol('n')))
 ---
 case: limit
@@ -65,7 +65,7 @@ surface: lim[x -> 0](sin(x) / x)
 strict: lim(binder(x, approach(0)), /(sin(x), x))
 core: (lim (binder x (approach 0)) (/ (sin x) x))
 latex: \lim_{x \to 0} \frac{\sin\left(x\right)}{x}
-sympy: Limit(sin(x)/x, x, 0)
+sympy: limit(sin(x)/x, x, 0)
 sympy_srepr: Limit(Mul(sin(Symbol('x')), Pow(Symbol('x'), Integer(-1))), Symbol('x'), Integer(0))
 ---
 case: derivative

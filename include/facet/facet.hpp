@@ -56,6 +56,18 @@ struct SignatureHelp {
   std::string documentation;
 };
 
+struct DirectiveArg {
+  std::string key;
+  std::string value;
+  bool named = false;
+};
+
+struct KernelDirective {
+  std::string verb;
+  std::vector<DirectiveArg> args;
+  bool scoped = false;
+};
+
 struct Unmapped {
   std::string head;
   std::string kernel;
@@ -153,6 +165,8 @@ Coverage coverage(Ref ref, const std::string& kernel);
 CompareResult compare(Arena& arena, Ref lhs, Ref rhs, const std::string& by);
 
 std::vector<Diagnostic> validate(Ref ref);
+bool is_kernel_directive(const std::string& surface_input);
+KernelDirective read_kernel_directive(const std::string& surface_input);
 std::vector<SemanticToken> semantic_tokens(const std::string& surface_input);
 std::vector<CompletionItem> completions(const std::string& surface_input,
                                         std::size_t cursor_offset);
